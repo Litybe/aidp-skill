@@ -153,6 +153,23 @@ fragilités d'origine : voir le plan de conception.)
 
 ---
 
+## Mémoire et RAG
+
+Les pipelines `unity-*`, `art-*`, `map-*` et `doc-*` utilisent le gestionnaire de mémoire et le RAG
+du binaire (`aidp memory ...`, `aidp rag ...`, contrat C10) :
+
+- `prepare` lit les mémoires actives pertinentes (`memory-context.md`, 2000 tokens au plus) et les passe
+  aux stages suivants ; la BIBLE et le code se cherchent par `aidp rag search`, plus par lecture complète ;
+- les derniers stages de revue, correction et test écrivent `memory-proposals.json` (5 leçons au plus) ;
+  le daemon les ingère, l'humain approuve ;
+- si les commandes échouent, le run continue sans mémoire et le signale ;
+- `knowledge-read` / `knowledge-update` restent (notes longues par feature) ; la mémoire porte les leçons
+  courtes et ciblées.
+
+Recette : `templates/recipes/memory.md`. Détail : `docs/gamedev-content-pipelines.md`.
+
+---
+
 ## Commandes
 
 v7 embarque son **propre jeu de commandes** (dans `commands/`, installées par `setup-gamedev.ps1` dans

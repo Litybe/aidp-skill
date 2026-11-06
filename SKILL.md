@@ -1,6 +1,6 @@
 ---
 name: ai-dev-pipeline-v7
-description: Workflow-native pipeline orchestrator (dev, study, ticket-create, discovery, tech/functional doc, audit) whose output lands in an Obsidian vault instead of the repo's .aidp folder. The Rust binary `aidp` compiles the pipeline into a deterministic Claude Code **Workflow** script; you run it with the `Workflow` tool. Sub-agents return schema-validated output (no reply parsing), independent stages run in parallel, executors can use git-worktree isolation, and gates pause/resume natively. Every artefact is written to `<vault>/Pipelines/<repo>/<feature>/<run_id>/` with generated index notes (frontmatter properties + wikilinks) linking runs, stages, features and repos. Triggers on /run-pipeline-v7, "lance la pipeline v7", "run pipeline v7", "ai-dev-pipeline-v7", and on questions about the AIDP vault.
+description: Workflow-native pipeline orchestrator (Unity dev, review and fix, pixel art, aidp and aidp-studio development, knowledge base) whose output lands in an Obsidian vault instead of the repo's .aidp folder. The Rust binary `aidp` compiles the pipeline into a deterministic Claude Code **Workflow** script; you run it with the `Workflow` tool. Sub-agents return schema-validated output (no reply parsing), independent stages run in parallel, executors can use git-worktree isolation, and gates pause/resume natively. Every artefact is written to `<vault>/Pipelines/<repo>/<feature>/<run_id>/` with generated index notes (frontmatter properties + wikilinks) linking runs, stages, features and repos. Triggers on /run-pipeline-v7, "lance la pipeline v7", "run pipeline v7", "ai-dev-pipeline-v7", and on questions about the AIDP vault.
 min_aidp_version: 7.1.0
 ---
 
@@ -20,23 +20,38 @@ lives**: an Obsidian vault instead of the target repo's `.aidp/` folder.
 
 You are still a thin driver: you only run a few `aidp` commands, invoke `Workflow`, and relay gates.
 
+## Gamedev profile
+
+This copy of the skill serves solo Unity game development. Tools: Unity (and its MCP), Aseprite and
+Pixellab (MCP), GitHub issues and PRs through `gh`, `aidp`, and graphify for the knowledge graph. No
+Jira, Confluence, Sonar, CI, Teams, Mongo, SQS, Datadog, deployment, Codex or Copilot.
+
+- Templates: `dev-unity`, `review-unity`, `fix-review-unity`, `pixelart`, `dev-aidp` (aidp itself),
+  `dev-studio` (the `aidp-studio` front), `knowledge-init`, the fragments `knowledge-read`,
+  `knowledge-update` and `review`, and the demo `dev-exemple`. Flow: `perso-delivery`.
+- Disk: nothing is installed on C:. Skill `D:\AIDP\skill` (`AIDP_SKILL_ROOT`), binary `D:\AIDP\bin`,
+  sources `D:\AIDP\src`, vault `D:\AIDP\Vault`, daemon state `D:\AIDP\gateway` (`AIDP_GATEWAY_DIR`),
+  agents and commands in `<project>\.claude\`. Only `~/.claude/settings.json` (Stop hook) and
+  `~/.aidp/config.json` (vault, `ci.enabled: false`) stay on C:, because Claude Code and aidp read
+  them only there.
+- Setup: `setup-gamedev.ps1` (`/pipeline-setup-gamedev-v7`). It builds and installs nothing.
+
 ## Prerequisites
 
-`aidp` must be built (with the `workflow` subcommand) and on PATH. Run `/pipeline-setup-v7` if needed, then
-`/pipeline-doctor-v7`. The binary is built from the **aidp repository**
-(`https://github.com/AlexisVuk/ai-dev-pipeline-v7`, checked out at `AIDP_SRC`, default
-`C:/CODE/Tools/aidp`), then installed by `/pipeline-setup-v7` into `~/.aidp/bin/aidp` (override:
-`AIDP_INSTALL_DIR`), the folder on PATH. This skill holds only the templates, agents, commands and
-hooks. After pulling the aidp repository, re-run `/pipeline-setup-v7` to update the installed copy, then
-open a new session. A cargo build alone does not update it, and `rtk cargo clean` never breaks a running
-session. In this skill, a `docs/` path other than `docs/agents-reference.md`, and every `crates/` path,
-belongs to the aidp repository.
+`aidp` must be built (with the `workflow` subcommand) and on PATH: `D:\AIDP\bin\aidp.exe` in the gamedev
+profile. Run `/pipeline-setup-gamedev-v7` if needed, then `/pipeline-doctor-v7`. The binary is built
+from the **aidp repository** (`https://github.com/AlexisVuk/ai-dev-pipeline-v7`, checked out at
+`AIDP_SRC`, `D:\AIDP\src\aidp`) with its toolchain on D:, then copied into `D:\AIDP\bin`. This skill
+holds only the templates, agents, commands and hooks. A cargo build alone does not update the installed
+copy, and `rtk cargo clean` never breaks a running session. In this skill, a `docs/` path other than
+`docs/agents-reference.md`, and every `crates/` path, belongs to the aidp repository.
 `rtk aidp doctor`'s `aidp_on_path` check fails (exit 6) when the first `aidp` on PATH is absent, a
 `target/debug` or worktree build, a different binary from the running one, or older than the sources
-(slugs `absent`, `target_build`, `mismatch`, `older_than_running`, `older_than_sources`); the fix is
-`/pipeline-setup-v7`. The gateway reports the same verdict as the `aidpBinary` block of `GET /api/health`.
-Its `skill_compat` check fails when the installed `aidp` is older than the `min_aidp_version` declared
-in this file's frontmatter; the fix is to pull the aidp repository and re-run `/pipeline-setup-v7`.
+(slugs `absent`, `target_build`, `mismatch`, `older_than_running`, `older_than_sources`); the fix is a
+fresh build copied into `D:\AIDP\bin`. The gateway reports the same verdict as the `aidpBinary` block of
+`GET /api/health`. Its `skill_compat` check fails when the installed `aidp` is older than the
+`min_aidp_version` declared in this file's frontmatter; the fix is the same. Its `ci_autopilot_hooks`
+check is red by design in the gamedev profile.
 
 Agent providers: `~/.aidp/config.json` may hold a `providers` key (default provider, per-provider
 `program`/`args`, tier-to-model map). A stage picks its provider by: stage `provider:`, then template
@@ -55,21 +70,18 @@ old process-global `OnceCell` — `AIDP_MODEL_PRICES` itself is unchanged, only 
 `gh`/`git` spawn resolves its program through `resolve_program`, so a `gh.cmd` shim on `PATHEXT` is
 honored by every `rtk aidp gh` verb, on Windows included.
 `rtk aidp gh pr-status [<pr>] [--repo owner/name]` reads a PR's merge gate (facts plus verdict); it is read-only and exits 0 whatever the verdict.
-`rtk aidp gh pr-comments <pr> [--repo owner/name]` splits a PR's review comments into points: a comment splits at its `##` to `####` headings, else at its top-level list items; a code block is never split. A point id is `<commentId>#<i>`. The `bot` flag is set for an author ending in `[bot]` or listed in `ci.bot_authors`. The comment carrying the marker `<!-- aidp:pr-comments-summary -->` is excluded.
+`rtk aidp gh pr-comments <pr> [--repo owner/name]` splits a PR's review comments into points: a comment splits at its `##` to `####` headings, else at its top-level list items; a code block is never split. A point id is `<commentId>#<i>`. The `bot` flag is set for an author ending in `[bot]`. The comment carrying the marker `<!-- aidp:pr-comments-summary -->` is excluded.
 `rtk aidp gh pr-review-threads --all` also returns `comments[]`, `lastBy`, `addressed` (`direct`, `indirect` or `no`, advisory only), `waitingOnReviewer` and `startLine`.
-Squad PR inbox: `rtk aidp gh squad-repos` and `rtk aidp gh squad-prs` (read-only), served by the daemon at `GET /api/prs`.
-PR detail: `rtk aidp gh pr-detail|pr-files|pr-file-diff` read a PR; `comment-create|edit|delete`, `review-comment-create|edit|delete`, `review-submit` and `run-rerun --failed` write to it; `rtk aidp sonar report --pr <n> --envelope` reads its Sonar gate. The daemon keeps drafts and viewed marks in `~/.aidp/gateway/pr-drafts.json` and `pr-viewed.json`. See `docs/gateway-api.md`.
+PR detail: `rtk aidp gh pr-detail|pr-files|pr-file-diff` read a PR; `comment-create|edit|delete`, `review-comment-create|edit|delete`, `review-submit` and `run-rerun --failed` write to it. The daemon keeps drafts and viewed marks in `~/.aidp/gateway/pr-drafts.json` and `pr-viewed.json`. See `docs/gateway-api.md`.
 
-PR attention: the daemon raises deduplicated PR signals (new comment, changes requested, CI or Sonar red, conflict, mergeable, review requested) at `GET /api/prs/attention`; `POST /api/prs/attention/read` marks them read, and `notifications.pr` in `~/.aidp/config.json` toggles each one. See `docs/gateway-api.md`.
-Selected threads only: `rtk aidp gh pr-fix <repo> <n> --threads <ids> [--points <ids>] [--note-file -]` starts a free autonomous session through the daemon (`POST /api/prs/fix`) that fixes those threads, replies and pushes to the PR head branch. Use it for a quick fix of a few threads; use the `pr-comments` pipeline to classify, plan and review every comment.
+PR attention: the daemon raises deduplicated PR signals (new comment, changes requested, checks red, conflict, mergeable, review requested) at `GET /api/prs/attention`; `POST /api/prs/attention/read` marks them read, and `notifications.pr` in `~/.aidp/config.json` toggles each one. See `docs/gateway-api.md`.
+Selected threads only: `rtk aidp gh pr-fix <repo> <n> --threads <ids> [--points <ids>] [--note-file -]` starts a free autonomous session through the daemon (`POST /api/prs/fix`) that fixes those threads, replies and pushes to the PR head branch. Use it for a quick fix of a few threads; use `fix-review-unity` to fix every review comment of a Unity PR.
 PR actions: `rtk aidp gh pr-ready`, `pr-update-branch`, `pr-merge`, `thread-reply` and `thread-resolve`; `rtk aidp gh pr-create --draft` opens a draft PR (the `pr_draft` setting sets the default). See `docs/exit-codes.md`.
 
 Test infrastructure notes (LOC-49), relevant when `rtk cargo test --workspace` runs in a `verify` stage:
 - `aidp-testkit`'s `ProcShim` installs a real `<name>.exe` on Windows (an argv-recorder dev binary that
   writes one argument per line into `ARGV_FILE`), not a `.bat`: `CreateProcessW` cannot run a `.bat`
   as a command.
-- The `aidp-integrations` Jira mock now shuts down deterministically (`MockHandle` stop/`Drop` returns
-  promptly), and Jira HTTP calls carry a 30 s timeout. Root cause: `docs/loc-49-jira-mock-hang.md`.
 
 ## Where the output goes (v7)
 
@@ -115,14 +127,10 @@ The gateway daemon resolves the vault with `aidp_core::vault::resolve_global` (`
   `Knowledge/`, it is not created by `aidp vault init` — the first `aidp ticket` command creates it on
   demand. No pipeline stage calls `aidp ticket` directly, but the gateway's dispatcher does start
   sessions from the tickets in it, under a slot ceiling, a one-session-per-project rule, and a
-  token-budget verdict. Four guardrails shape what it launches: a sprint-scoped default JQL, a
-  `waiting-on:<KEY>` skip while Jira blockers are unfinished, adoption of an already-existing PR
-  (`aidp ticket adopt <KEY> --pr <url|number>`, `POST /api/tickets/:key/adopt`), and an epic context
-  block in the prompt. See `docs/tickets.md` for the format and the command surface.
-  With `jira.write_back.on_release` on, the dispatcher also watches merged tickets for a release tag
-  (`autopilot.release_watch_until`), writes it to Jira with `aidp jira issue-edit` and moves the
-  ticket to the `status_map.released` status (QA Validation). The driver never edits `autopilot.*`
-  by hand.
+  token-budget verdict. It skips a ticket while its `waiting-on:<KEY>` blockers are unfinished and can
+  adopt an already-existing PR (`aidp ticket adopt <KEY> --pr <url|number>`,
+  `POST /api/tickets/:key/adopt`). See `docs/tickets.md` for the format and the command surface.
+  The driver never edits `autopilot.*` by hand.
 - **Two layers.** The transverse layer (base root: `overview/architecture/events/data/domain/
   operations.md`) answers *what is this service* — read cold, kept small. The feature layer
   (`Features/<slug>.md`, one note per **business feature**) answers *how does this business capability
@@ -135,7 +143,7 @@ The gateway daemon resolves the vault with `aidp_core::vault::resolve_global` (`
 - **Create-or-update is decided by `aidp`, not by the agent.** Told in prose to "update the note if
   the feature exists", an agent forks the base into `auto-exclusion.md` / `autoexclusion.md` /
   `auto-exclusion-v2.md`. So `aidp knowledge resolve --name "<feature>"` scores the run against every
-  existing note (exact name/alias/slug → 1.0, a Jira key listed in `tickets:` → 0.95, else word
+  existing note (exact name/alias/slug → 1.0, a ticket key listed in `tickets:` → 0.95, else word
   overlap) and returns `update` with the file to edit, `create` with the exact path to write,
   `ambiguous` with the candidates to read, or `supersede` when the best match is itself superseded —
   its score is capped at `0.50` (still a candidate, never an update target) and the target becomes the
@@ -147,11 +155,11 @@ The gateway daemon resolves the vault with `aidp_core::vault::resolve_global` (`
   business features), a gated `write_knowledge` for the transverse notes, `write_features` fanned out
   one sub-agent per feature, then `verify` (audits every claim against the code) → `correct`. Run it
   once per service; re-running it is safe.
-- **The loop that keeps it true afterwards**, wired into `dev-*`, `study`, `tech-doc` and `func-doc`:
+- **The loop that keeps it true afterwards**, wired into `dev-aidp` and `dev-studio`:
   1. `knowledge-read` (sub-pipeline, `uses: knowledge-read`) runs *first* in discovery and distils the
      base into the run's `knowledge_context.md` — starting with the **feature note** of the work at
-     hand — and ends with an explicit "what the base does NOT answer" list, which is what the Jira /
-     Confluence / code reads then go and find.
+     hand — and ends with an explicit "what the base does NOT answer" list, which is what the code
+     reads then go and find.
   2. every research and planning stage also gets the base injected into its prompt: the transverse
      notes as a file list, the feature notes with their names and aliases, and the one feature note
      matching this run named outright — "read this FIRST, investigate only what it does not answer".
@@ -167,13 +175,12 @@ The gateway daemon resolves the vault with `aidp_core::vault::resolve_global` (`
 - `<repo>` comes from the git `origin` remote, so two checkouts of one repo group together.
 - **Notes prefixed `_` are generated** and rewritten on every `aidp` call that touches the run —
   never hand-edit them, and never tell a sub-agent to write one.
-- **Nothing aidp writes stays in the repo.** Per-repo state that belongs to no single run — the CI
-  autopilot's `run-in-flight` marker and its `ci-autopilot.state.json` ledger — lives in
-  `<vault>/Pipelines/<repo>/.state/`, dot-prefixed so neither Obsidian nor the note generators see it.
+- **Nothing aidp writes stays in the repo.** Per-repo state that belongs to no single run — the
+  `run-in-flight` marker — lives in `<vault>/Pipelines/<repo>/.state/`, dot-prefixed so neither
+  Obsidian nor the note generators see it.
   A copy left in `<repo>/.aidp/` by an older binary is moved out on first touch.
-- What stays in the repo is what **you** put there and aidp only reads: `.aidp/dev-target.json` and
-  `.aidp/sonar.json` (connection config), `.aidp/ci-autopilot.json` (per-repo autopilot config) and
-  `.aidp/pipeline/flow/` (project-local templates). Those are inputs, not output.
+- What stays in the repo is what **you** put there and aidp only reads: `.aidp/pipeline/flow/`
+  (project-local templates). That is input, not output.
 - Pre-v7 runs stay in `.aidp/pipelines/` and stay loadable, resumable and listed by `aidp status`.
   Nothing was migrated.
 
@@ -193,6 +200,9 @@ writes, moves or deletes a note; it only prints the command a human can choose t
 `settings:` key is not rejected — `settings.additionalProperties` stays `true` on purpose. Inside a
 stage they need no flags — `$AIDP_RUN` locates the base.
 
+Graphify: `settings.knowledge_graph.graphify_bin` must be a bare program name resolved on `PATH`;
+an explicit path only via the user env var `AIDP_GRAPHIFY_BIN`.
+
 ## When to invoke
 
 - `/run-pipeline-v7 <template> [target]`
@@ -200,89 +210,11 @@ stage they need no flags — `$AIDP_RUN` locates the base.
 - Any v4-style request where the user explicitly wants the v7 (Workflow) engine — e.g. for benchmarking
   v4 vs v7.
 
-## CI autopilot — pipelines that start themselves
-
-Claude Code has no "CI failed" hook: hooks fire on **Claude's** lifecycle, not GitHub's. `aidp ci` is
-the bridge. It probes the PR in flight, fingerprints each problem so it fires exactly once, and speaks
-the hook protocol (JSON on stdin, JSON on stdout, exit 2) so `settings.json` holds one-liners.
-
-| signal | source | pipeline |
-|---|---|---|
-| `gha` | failing GitHub Actions checks on the PR head sha | `gha-fix` |
-| `sonar` | SonarQube quality gate red, or new-code issues | `sonar-fix` |
-| `comments` | unresolved PR review threads | `pr-comments` |
-
-Three hooks (`hooks/ci-events.example.json`, installed by `/pipeline-setup-v7`):
-
-- **`PostToolUse` (Bash), `asyncRewake: true`** — the one that makes it feel automatic. After a
-  `git push` / `gh pr create`, it stays in the background for up to 30 minutes polling the checks, and
-  **wakes the session on exit 2** the moment the build goes red. You push, you carry on, Claude comes
-  back to you with the failure.
-- **`Stop`** — at the end of a turn, exits 2 with the directive if anything is pending, so the fix run
-  starts without you typing. Guarded against loops by `stop_hook_active`, the `max_notifications` cap
-  (default 1) and a hard skip while the repo's `run-in-flight` marker exists (never interrupt a
-  running pipeline to start another).
-- **`UserPromptSubmit`** — cache-only, never touches the network; its stdout becomes context, so a
-  session that was not woken still knows the PR has three unresolved comments and a red gate.
-
-When woken, you invoke the **`ci-autopilot`** skill. It reads `aidp ci dispatch`, runs the pipelines
-one at a time via the normal v7 driver protocol above, and acks each signal. **The autopilot decides
-whether to start a run; it never decides whether to push.** Every one of those pipelines gates its
-`push`/`reply` stage, so nothing reaches GitHub without the user approving it. The dispatch plan also
-carries the PR branch's ticket key as a `feature` input when the branch names one
-(`feat/SQIPI-5694` → `SQIPI-5694`), so the run is filed under that ticket instead of a PR-numbered
-folder — `target` still stays the PR number.
-
-**Which PR it watches.** First the one of the branch you are on; if that yields nothing usable —
-no PR, a draft, a merged one, an ignored branch — it falls back to your own open PRs
-(`gh pr list --author @me`) and to the ones it has seen before. That fallback exists because a branch
-is routinely *not* checked out: Claude Code runs isolated stages in throwaway worktrees under
-`<repo>/.claude/worktrees/`, and people switch branches. When a signal is recovered that way, the
-directive says so and names the branch, because **any stage that edits or pushes code must run on the
-PR's branch**.
-
-**Where its files live.** Always the **main** worktree (`git rev-parse --git-common-dir`), never a
-linked one — otherwise the config you set in the main checkout is invisible to a worktree, and
-everything the autopilot learns dies when that worktree is cleaned up.
-
-**Draft PRs** are skipped by default (`ignore_draft_prs`) — work in progress is allowed to be red. The
-PR is still remembered, so the moment it is marked ready the next probe picks it up.
-
-Control surface (`/ci-autopilot-v7`, or directly):
-
-```
-rtk aidp ci status --refresh --format json-pretty   # PR, checks, Sonar, threads, derived signals
-rtk aidp ci dispatch                                # which pipeline, what target (PR), what inputs (incl. feature ticket key)
-rtk aidp ci ack --all --note "handled"              # silence the current state (re-fires on a new sha)
-rtk aidp ci config --enable false --save            # off for this repo
-rtk aidp ci config --auto-dispatch false --save     # report but never start a run unprompted
-rtk aidp ci reset                                   # forget every dispatch record
-```
-
-Config lives in `.aidp/ci-autopilot.json` (per repo) or `~/.aidp/config.json` → `"ci"` — config is
-yours, so it stays in the (gitignored) repo `.aidp/`. State lives in the vault, at
-`<vault>/Pipelines/<repo>/.state/ci-autopilot.state.json` (falling back to the legacy
-`.aidp/ci-autopilot.state.json` only when no vault is configured) — state is ours, so it does not sit
-in the repo. The repo file still wins for ordinary config fields, but `auto_dispatch` needs the user
-config: set `ci.auto_dispatch: true` in `~/.aidp/config.json` (LOC-27), so a cloned repo cannot start
-pipelines by itself.
-
-Graphify: `settings.knowledge_graph.graphify_bin` must be a bare program name resolved on `PATH`;
-an explicit path only via the user env var `AIDP_GRAPHIFY_BIN` (LOC-27).
-
-Sonar needs a host and a token: `aidp sonar config --host https://sonarqube.betclic.net --save` plus
-`SONAR_TOKEN` in the environment (never in the repo). Without them the `sonar` signal degrades to
-nothing and the other two keep working — `aidp ci status` reports the reason under `errors.sonar`.
-Likewise, a missing or unauthenticated `gh`, or a rate-limited GitHub API, degrades only the PR signal
-and is reported under `pr_error` — a key distinct from `skipped`, `checks_error`, `threads_error` and
-`sonar_error`.
-
-**Flow-owned tickets.** When the daemon runs with `dispatcher.launch: flow`, it delivers a ticket through the `ticket-delivery` flow and runs `gha-fix`, `sonar-fix` and `pr-comments` itself. `aidp ci dispatch` then reports the skip reason `owned-by-flow` for that PR: do not start those pipelines by hand, the flow owns the PR.
-
 ## Procedure (do EXACTLY this)
 
 **Set `AIDP_SKILL_ROOT` to this skill's directory for every `aidp` call below** so v7 templates (not v4)
-are discovered. On this machine that is `~/.claude/skills/ai-dev-pipeline-v7`. (PowerShell:
+are discovered. In the gamedev profile it is `D:\AIDP\skill`, already set as a user variable by
+`setup-gamedev.ps1`. (PowerShell:
 `$env:AIDP_SKILL_ROOT = "<v7 skill root>"`; bash: prefix each call with `AIDP_SKILL_ROOT=<v7 skill root>`.)
 
 `aidp` no longer falls back to the source tree it was built from. A binary that was moved or installed
@@ -305,12 +237,10 @@ the line whose JSON has a `phase` key; ignore every other line, and never `JSON.
 
 Two behaviours to expect. When the run has no knowledge graph, `aidp workflow emit` drops the
 `graphify-context` skill from every stage and prints one compile warning per stage; this is not an error.
+The templates of this skill declare `graphify` instead, which stays and falls back to Grep and Read
+when the repository has no graph.
 Review findings may carry a `skill_rules` axis: `aidp skill-rules check` ran over the diff and its
 `blocking` findings (file and line) are merged like any other axis. You never run it yourself.
-
-### Templates `dev-flow` and `correction-after-test-dev`
-
-Before `aidp run init`, run `aidp project stack <workspace>` and offer its `stack` value as the answer to the `stack` enum through AskUserQuestion; the user may pick another value. `unknown` is a refusal, not a choice: run init rejects it, so escalate to the user instead of proceeding. `correction-after-test-dev` never opens a PR; `dev-flow` takes `pr` as `draft`, `ready` or `none`.
 
 ### Exit 127: `aidp` not found mid-run
 
@@ -342,21 +272,17 @@ Never abandon a run without saying where it stands.
 
 2. **Collect inputs** — inspect the chosen pipeline's `inputs:` (call `aidp pipeline show <id>` if needed).
    For every `kind: enum` input with a `values` list, use `AskUserQuestion` (default first/recommended).
-   For a `kind: list` input (e.g. `jira_keys` — several unitary US of one feature), ask the user for the
-   keys and pass each with a repeated `--input jira_keys=<key>` (accumulates into an array — no
-   hand-assembled JSON needed); a single ticket is just one `--input`. If the pipeline also declares an
-   optional `feature` string (epic/label), pass it when the user names one — it becomes the run's
-   grouping folder and the `feat/<feature>` branch; otherwise both are derived from the ticket list.
+   For a `kind: list` input, ask the user for the values and pass each with a repeated
+   `--input <name>=<value>` (accumulates into an array — no hand-assembled JSON needed). If the pipeline
+   also declares an optional `feature` string, pass it when the user names one — it becomes the run's
+   grouping folder and the `feat/<feature>` branch.
 
-   **Dual-mode demand (`jira_keys` + `prompt`).** A template declaring BOTH takes its demand either way,
-   and you must pass exactly one:
-   - the user named tickets → `--input jira_keys=SQIPI-1 [--input jira_keys=SQIPI-2 ...]`;
-   - the user described the work in prose, with no ticket → `--input prompt="<their request, verbatim>"
+   **Dual-mode demand (`issue` + `prompt`).** A template declaring BOTH (`dev-unity`) takes its demand
+   either way, and you must pass exactly one:
+   - the user named a GitHub issue → `--input issue=42`;
+   - the user described the work in prose, with no issue → `--input prompt="<their request, verbatim>"
      --input feature=<short-kebab-slug>`. Pass the request **verbatim** — do not summarise or restructure
-     it; the `discover_prompt` stage is what turns it into requirements, and it quotes the original.
-     `feature` is **required** here: with no ticket list, nothing else can name the branch, the vault
-     folder or the PR. Derive the slug from the request and confirm it with the user in the same
-     `AskUserQuestion`.
+     it. Derive the slug from the request and confirm it with the user in the same `AskUserQuestion`.
    If the user gave neither, ask which mode they want before starting the run — a run with an empty
    demand compiles fine and then wastes a full pipeline. `aidp run start` (next step) validates every
    input against the pipeline's contract and **fails, naming the missing key**, rather than guessing —
@@ -495,14 +421,14 @@ Never abandon a run without saying where it stands.
      that the code has problems. `at: "<loop name>"` means the correction loop **exhausted its
      iterations** with blocking findings still open; the envelope is that reviewer's. A loop body must
      end with a stage re-declaring the output its `when:` reads (for convergence detection), which
-     `templates/dev-aidp.yaml` now does like every other `dev-*` template; a reviewer stage feeding
+     `templates/dev-aidp.yaml` does like `dev-studio`; a reviewer stage feeding
      a correction loop no longer hard-pauses on a skipped control alone.
      
      **Authoring `type: loop` templates:** A correction loop's body MUST end with a stage that 
      re-declares the output its `when:` clause reads — conventionally `rereview` with `agent: reviewer` 
      and `outputs: [findings.json, summary.md]`. Without it, the loop cannot converge: the condition 
-     never changes and the review stage is not linked back for the emitter to track. Every `dev-*` 
-     template (`dev-aidp`, `dev-csharp`, `dev-lambda-ts`) now follows this pattern; see docs/agents-reference.md 
+     never changes and the review stage is not linked back for the emitter to track. `dev-aidp` and
+     `dev-studio` follow this pattern; see docs/agents-reference.md 
      for the full field-level contract.
      
      **Nor does a single plan task** — a task deferring shared-file work to `follow_ups`, or flagging a
@@ -513,10 +439,9 @@ Never abandon a run without saying where it stands.
      **Nor does a skills downgrade.** An executor that did not load its declared skills keeps its reply,
      capped at `needs_review` with `signals.skills_not_loaded`; the run continues, reconcile records the
      list per stage and `aidp run summary` prints it as a warning. Read-only roles still fail after one retry.
-     **Nor does a stage a correction loop repairs.** Examples: `implement` in `dev-aidp` and
-     `dev-lambda-ts`, `tests__tests_suite` in `dev-csharp` (the stage the review axes read), and the
-     in-loop `refix`. When such a stage replies
-     `needs_review` (red tests it could not fix, even ones that also fail on master), the run
+     **Nor does a stage a correction loop repairs.** Examples: `implement` in `dev-aidp` (the stage
+     the review axes read), `verify` in `dev-studio`, and the in-loop `refix`. When such a stage replies
+     `needs_review` (red tests it could not fix, even ones that also fail on the default branch), the run
      continues. The review receives the report and files it as a blocking finding, and the first
      correction loop iteration fixes it. The emitted `__REVIEWED` set lists these stages. If the loop
      cannot fix it, the run pauses at `at: "<loop name>"`.
@@ -567,17 +492,9 @@ Never abandon a run without saying where it stands.
    (default `pause`) decides whether a failed or cancelled item still stops the stage, or is instead
    named to the merge sub-agent so the stage can carry on.
 
-## Local PR review — `pr-review` then `verify-review`
-
-Run `pr-review` with the PR as `pr` for pass 1. Run `verify-review` for pass 2 or 3 with `pass` and
-`previous_run` (the prior pass's run id). The agents only read and write `findings.json` or
-`verify.json`; GitHub writes go through `aidp gh review-post` and `aidp gh thread-reopen`, called by
-the workflow, never by the templates. The loop ends when a pass is clean, or after pass 3 with
-status `escalated`. See `docs/agents-reference.md` §3, §9.2, §12.
-
 ## Plan-driven stages — how the plan decides the parallelism
 
-In the `dev` and `dev-lambda-ts` templates the planner no longer writes prose for a human to interpret:
+In the `dev-aidp` and `dev-studio` templates the planner does not write prose for a human to interpret:
 it writes **`plan.json`** (`schema/plan.schema.json`), *one object per task to realize*, each carrying its
 own `prompt`/`instructions`, its `needs` (real data dependencies) and its `files` (the task's write set).
 The `implement` stage then declares `plan_tasks: { from: "{{ stages.plan.outputs.plan }}", max: N }` and
@@ -641,7 +558,7 @@ A native run carries an immutable `autonomous` flag. In an autonomous run every 
 | `/run-pipeline-v7`, `aidp workflow emit` | workflow | no |
 | `aidp run exec`, `POST /api/runs` | native | per request |
 | Viewer launch, `aidp gateway start --template` | native | no (viewer: user chooses) |
-| Ticket dispatcher and Start, CI autopilot, flow `pipeline` step | native | yes |
+| Ticket dispatcher and Start, flow `pipeline` step | native | yes |
 | Presets and automations | native | opt-in with `autonomous: true` |
 
 `engine: "workflow"` (legacy alias `v7`) on a daemon launch, preset or automation restores the Claude-session-driven `workflow.js` path. This skill itself always drives workflow mode. See `docs/native-execution.md`.
@@ -698,16 +615,15 @@ A native run carries an immutable `autonomous` flag. In an autonomous run every 
 - `README.md` — human onboarding.
 - `templates/` — v7 pipelines (`version: 5`). Stages may add `isolation: worktree`, `fan_out:` (shard
   labels) or `plan_tasks:` (compiled from the planner's `plan.json`). Extend via `/pipeline-new-v7`.
-  Every `dev-*` / `test-csharp` template is **plan-driven**. `templates/legacy/` is the archive of
-  templates retired from the discoverable park (same id, content unchanged, moved there with `git mv`)
-  — `aidp` excludes that folder from discovery, so its ids never show up in `aidp pipeline list` and
-  stay runnable only by explicit path.
+  `dev-aidp` and `dev-studio` are **plan-driven**. `templates/flows/` holds the flow definitions
+  (`perso-delivery`); `templates/recipes/` the autonomous-session recipes the daemon reads.
 - `agents/` — the 4 generic sub-agents (analyzer / planner / executor / reviewer). Extend via
   `/agent-new-v7`.
-- `commands/` — the full v7 command set (`run-pipeline-v7`, `pipeline-setup-v7`, `pipeline-doctor-v7`,
-  `pipeline-status-v7`, `pipeline-resume-v7`, `pipeline-validate-v7`, `pipeline-new-v7`, `agent-new-v7`).
-- `hooks/` — one set. `ci-events.example.json` **starts** a pipeline (the CI autopilot, see above),
-  merged idempotently via `aidp setup merge-hooks`. There is no pipeline-guard hook: v7 has a single
+- `commands/` — the full v7 command set (`run-pipeline-v7`, `run-unity-dev-pipeline`,
+  `run-pixelart-pipeline`, `pipeline-setup-gamedev-v7`, `pipeline-doctor-v7`, `pipeline-status-v7`,
+  `pipeline-resume-v7`, `pipeline-validate-v7`, `pipeline-new-v7`, `agent-new-v7`).
+- `hooks/` — `settings.example.json`, the one Stop hook (`aidp run summary`), merged idempotently.
+  There is no pipeline-guard hook: v7 has a single
   execution path (the Workflow tool), so there is no separate "main orchestrator" session to block
   from editing files while sub-agents work. `settings.example.json` used to also install a
   PreToolUse main-agent write block and a PostToolUse `aidp scope check`, gated on
@@ -717,8 +633,8 @@ A native run carries an immutable `autonomous` flag. In an autonomous run every 
   `aidp orchestrate` ever wrote — and that command is gone. Both hooks were removed rather than
   re-armed on a new marker; scope is checked after the fact instead. `aidp doctor` surfaces the
   removal as `pipeline_guard_hooks_removed` (`ok: true` once no such hook is installed).
-- `setup.ps1` / `setup.sh` — what `/pipeline-setup-v7` runs: the aidp repository's bootstrap, then
-  the hooks, the slash commands and `aidp doctor`.
+- `setup-gamedev.ps1` — what `/pipeline-setup-gamedev-v7` runs: user variables, the Stop hook, the
+  aidp config, the project's agents and commands, then `aidp validate --all` and `aidp doctor`.
 - Not in this skill: the JSON schemas (`schema/`, embedded in the binary, including
   `plan.schema.json` and `pipeline.schema.json`) and the `aidp` workspace itself (`aidp-cli`,
   `aidp-core`, `aidp-integrations`, `aidp-bench`, `aidp-gateway` — the resident control plane:
@@ -735,8 +651,7 @@ A native run carries an immutable `autonomous` flag. In an autonomous run every 
   for mutating cross-origin calls and CORS, header-only tokens with no `?token=`, single-use SSE
   tokens via `POST /api/events/token`, the `X-Hub-Signature-256` webhook signature), the request-body bound (`AIDP_MAX_BODY_BYTES`,
   `413`), `GET /api/health` (doctor, hooks, the `aidpBinary` PATH-binary block, Claude login,
-  state-dir size, orphaned sessions), the adaptive CI probe (`GET /api/ci/probe-state`), the
-  shell-free `claude` spawn and its `AIDP_CLAUDE_BIN` override, and the `POST /api/sessions` input
+  state-dir size, orphaned sessions), the shell-free `claude` spawn and its `AIDP_CLAUDE_BIN` override, and the `POST /api/sessions` input
   validation (`permissionMode`/`effort` enums, `model` allow-list). It also covers the LOC-29
   bounds: `AIDP_MAX_INFLIGHT_REQUESTS` (`503` beyond it, distinct from the `413` body bound),
   bounded SSE streams (a stalled client is disconnected and one `overflow` bus event emitted), a
@@ -757,7 +672,6 @@ read-only lane (ceiling 3) beside a writer; a writer on a busy workspace queues 
   (`new`, `list`, `show`, `render`, `edit`, `status`, `route`, `cancel`, `log`, `reindex`, `sync`,
   `start`, `plan`, `dispatch`, `budget`), and the `TODO/` layout. Read it before touching a ticket
   note or scripting against `aidp ticket`.
-- `docs/flows.md` — the ticket workflow engine (`aidp flow validate|show|list|start|status|approve|verdict|retry|skip|pause|resume|abort`, plus the action verbs `ci-watch|deploy-dev|notify-teams|git-branch|jira-comment`, `aidp jira issue-assign --me`, `aidp jira issue-transition --to-status`, `aidp gh copilot-review <repo> <n>` and `aidp gh deployment-approve <run_id>`; they print JSON and exit 6 on a business refusal):
+- `docs/flows.md` — the ticket workflow engine (`aidp flow validate|show|list|start|status|approve|verdict|retry|skip|pause|resume|abort`, plus action verbs such as `git-branch`; they print JSON and exit 6 on a business refusal):
   the definition format, storage under `<vault>/Pipelines/<repo>/<KEY>/flow/`, restart recovery and the
   `flow.*` bus events. Definitions live in `templates/flows/`, which is not a pipeline directory.
-- `benchmark/` — scenarios, fixtures and KPI definitions for `aidp bench`.

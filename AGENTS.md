@@ -18,18 +18,25 @@ Three repositories make the pipeline:
 | Repository | Holds |
 |---|---|
 | this one (`AlexisVuk/ai-dev-pipeline-skill`) | templates, agents, commands, hooks, `SKILL.md`, user docs |
-| aidp (`AlexisVuk/ai-dev-pipeline-v7`, at `AIDP_SRC`, default `C:/CODE/Tools/aidp`) | the Rust workspace, the JSON schemas, the gateway docs, the install scripts |
+| aidp (`AlexisVuk/ai-dev-pipeline-v7`, at `AIDP_SRC`, `D:\AIDP\src\aidp` in the gamedev profile) | the Rust workspace, the JSON schemas, the gateway docs, the install scripts |
 | `AlexisVuk/aidp-e2e` | end-to-end tests: the installed binary against this skill, no mock |
 
 | Path | Holds |
 |---|---|
 | `SKILL.md` | The driver procedure, loaded when the skill triggers; `min_aidp_version` in its frontmatter |
 | `commands/` | The `/…-v7` slash commands |
-| `templates/` | Pipelines (`version: 5`), `flows/`, `recipes/`; `templates/legacy/` is an archive, not discovered |
+| `templates/` | Pipelines (`version: 5`), `flows/`, `recipes/` |
 | `agents/` | The four generic sub-agents |
 | `hooks/` | Hook examples merged by `rtk aidp setup merge-hooks` |
 | `docs/agents-reference.md` | The full reference |
-| `setup.ps1` / `setup.sh` | What `/pipeline-setup-v7` runs |
+| `setup-gamedev.ps1` | What `/pipeline-setup-gamedev-v7` runs (gamedev profile, Windows) |
+
+## Gamedev profile
+
+This copy of the skill serves solo Unity game development: Unity, Aseprite and Pixellab (MCP),
+GitHub (issues, PR), aidp and graphify. No Jira, Confluence, Sonar, CI, Teams or deployment.
+Nothing is installed on C:; `setup-gamedev.ps1` and the README's "Profil gamedev" section give
+the details.
 
 ## Driving a pipeline run
 
@@ -68,7 +75,7 @@ Follow `SKILL.md`. The rules that must never bend:
 
 ## Git and pull requests
 
-- Work on a branch, open a PR against `master`; never commit to `master`.
+- Work on a branch, open a PR against `main`; never commit to `main`.
 - GitHub auto-merge is disabled on this repo: wait for the checks, then merge by hand.
 - On a PR under review, address review comments before chasing CI.
 - Commit messages follow Conventional Commits.
@@ -82,7 +89,7 @@ Follow `SKILL.md`. The rules that must never bend:
 | Pipeline YAML fields, `plan_tasks`, composition | §7, §7.1 |
 | Sub-agents, scopes, vault layout, knowledge base | §8 |
 | Reply envelope and artifact schemas | §9 |
-| Scope verification, tool restriction, CI autopilot hooks | §10 |
+| Scope verification, tool restriction | §10 |
 | Template catalog and fragments | §12 |
 | Developing aidp itself, `min_aidp_version` | §13.5 |
 | Setup and common failures | §14 |

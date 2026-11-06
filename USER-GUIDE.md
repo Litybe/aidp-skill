@@ -20,9 +20,8 @@
 9. [Artefacts produits — le vault Obsidian](#9-artefacts-produits--le-vault-obsidian)
 10. [Commandes disponibles](#10-commandes-disponibles)
 11. [Garde-fous et sécurité](#11-garde-fous-et-sécurité)
-11bis. [CI autopilot — réagir tout seul aux events CI](#11bis-ci-autopilot--réagir-tout-seul-aux-events-ci)
 12. [Créer ou modifier un template](#12-créer-ou-modifier-un-template)
-13. [Benchmark v4 vs v7](#13-benchmark-v4-vs-v7)
+13. [Pourquoi v7 est plus robuste que v4](#13-pourquoi-v7-est-plus-robuste-que-v4)
 14. [Dépannage & FAQ](#14-dépannage--faq)
 
 ---
@@ -30,8 +29,8 @@
 ## 1. Qu'est-ce que c'est ?
 
 **ai-dev-pipeline v7** est un orchestrateur de pipelines de développement pour Claude Code. Il
-automatise des workflows complets — implémenter un ticket Jira, auditer un service, rédiger une
-étude technique, créer des tickets, documenter un microservice — en découpant le travail en
+automatise des workflows complets — implémenter une issue GitHub dans un projet Unity, produire un
+asset pixel art, faire évoluer `aidp` ou son front, documenter un projet — en découpant le travail en
 **stages** exécutés par des **sous-agents spécialisés**, avec des **points de validation humaine**
 (gates) aux étapes critiques.
 
@@ -42,9 +41,9 @@ démarrer le Workflow, et vous relayer les questions.
 
 **Ce que ça vous apporte concrètement :**
 
-- Un ticket Jira implémenté de bout en bout (branche → analyse → plan → code → tests → review →
-  corrections → PR) avec votre validation aux moments clés.
-- Des stages indépendants exécutés **en parallèle** (ex. les 4 dimensions d'un audit).
+- Une issue GitHub implémentée de bout en bout (branche → plan → code → tests EditMode → PR →
+  playtest dans l'éditeur → review → corrections), le merge restant votre décision.
+- Des stages indépendants exécutés **en parallèle** (ex. les 4 dimensions d'une revue).
 - Des sorties **validées par schéma JSON** — pas de parsing fragile de texte libre.
 - Une **reprise native** après chaque gate : le préfixe déjà exécuté est servi depuis le cache,
   rien n'est recalculé.
@@ -55,17 +54,17 @@ démarrer le Workflow, et vous relayer les questions.
 
 | Terme | Définition |
 |---|---|
-| **Template** | Un fichier YAML dans `templates/` qui décrit une pipeline : ses inputs, ses stages, ses gates. Ex. `dev`, `audit`, `study`. |
+| **Template** | Un fichier YAML dans `templates/` qui décrit une pipeline : ses inputs, ses stages, ses gates. Ex. `dev-unity`, `pixelart`, `dev-aidp`. |
 | **Run** | Une exécution d'un template sur une cible donnée. Identifiée par un `run_id` (`YYYYMMDD-HHMMSS-xxxx`). Ses artefacts vivent dans le vault Obsidian, sous `<vault>/Pipelines/<repo>/<feature>/<run_id>/` — tous les runs d'une même feature sont regroupés sous `<feature>`. |
-| **Vault** | Le vault Obsidian où atterrit **tout** ce que les pipelines produisent (par défaut `C:/CODE/AIDP`). Voir §9. |
+| **Vault** | Le vault Obsidian où atterrit **tout** ce que les pipelines produisent (`D:/AIDP/Vault` dans le profil gamedev). Voir §9. |
 | **Stage** | Une étape de la pipeline, exécutée par un sous-agent. Produit des artefacts déclarés (ex. `plan.md`, `findings.json`). |
 | **Sous-agent** | Un des 4 agents génériques (analyzer / planner / executor / reviewer), spécialisé par la liste de `skills` qu'il charge. C'est lui qui fait le vrai travail. |
 | **Gate** | Point de validation humaine. Le run se met en pause et Claude vous demande d'approuver ou d'abandonner avant de continuer. |
-| **Track** | Niveau de profondeur d'une pipeline dev : `quick` (pas d'étude), `standard` (défaut), `deep` (étude + validation humaine du plan). |
+| **Track** | Niveau de profondeur de `dev-aidp` / `dev-studio` : `quick` (pas d'étude), `standard` (défaut), `deep` (+ revue quatre axes et boucle de correction). |
 | **Scope** | Périmètre d'écriture autorisé pour un executor (ex. `production` = code applicatif seulement, `tests` = tests seulement). |
 | **Workflow** | L'outil natif de Claude Code qui exécute le script JS émis par `aidp`. Gère la parallélisation, la validation par schéma, les tokens et la reprise. |
-| **Knowledge graph (Graphify)** | Graphe de connaissance du workspace construit au `run init`. Les stages d'analyse interrogent le graphe au lieu de faire du Grep/Read massif. Non bloquant : sans le CLI `graphify`, la pipeline fonctionne quand même. |
-| **Socle de connaissance** | La doc durable d'un service, dans `<vault>/Knowledge/<repo>/`, hors des runs. Deux couches : les **notes transverses** (ce que le service est) et une **note par feature métier** dans `Features/` (comment cette capacité fonctionne). Écrit par les stages `knowledge:`, relu en premier par tous les stages de recherche et de planification. Voir §9. |
+| **Knowledge graph (Graphify)** | Graphe de connaissance du workspace construit au `run init`. Les stages d'analyse interrogent le graphe au lieu de faire du Grep/Read massif. Non bloquant : sans le CLI `graphify`, la pipeline fonctionne quand même (les stages se rabattent sur Grep/Read). |
+| **Socle de connaissance** | La doc durable d'un projet, dans `<vault>/Knowledge/<repo>/`, hors des runs. Deux couches : les **notes transverses** (ce que le projet est) et une **note par feature métier** dans `Features/` (comment cette capacité fonctionne). Écrit par les stages `knowledge:`, relu en premier par tous les stages de recherche et de planification. Voir §9. |
 
 ---
 
@@ -73,30 +72,35 @@ démarrer le Workflow, et vous relayer les questions.
 
 ### Prérequis
 
+Profil gamedev : **rien ne s'installe sur C:**.
+
 - Claude Code avec l'outil `Workflow` (natif).
-- Rust (`cargo`) pour compiler le binaire `aidp` — installé via https://rustup.rs.
-- Les sources d'`aidp`, dans leur propre dépôt :
-  `rtk git clone https://github.com/AlexisVuk/ai-dev-pipeline-v7 C:/CODE/Tools/aidp`
-  (autre emplacement : variable `AIDP_SRC`). Le skill ne contient que les templates, agents,
-  commandes et hooks ; `/pipeline-setup-v7` compile le binaire depuis ce dépôt puis le copie dans
-  `~/.aidp/bin/` (le dossier placé sur le PATH). v4 n'est pas nécessaire.
+- Le binaire `aidp.exe` dans `D:\AIDP\bin`, compilé depuis le dépôt aidp (`D:\AIDP\src\aidp`,
+  variable `AIDP_SRC`) avec sa toolchain Rust sur D:. Le skill ne contient que les templates, agents,
+  commandes et hooks ; il ne compile rien. v4 n'est pas nécessaire.
+- Pour les pipelines Unity et pixel art : Unity, les serveurs MCP Unity, Aseprite et Pixellab, `gh`
+  connecté à GitHub, et les skills et agents `unity-*` / `pixel-*` (hors de ce dépôt).
+- Facultatif : le CLI `graphify` pour le graphe de connaissance.
 
 ### Mise en place
 
 ```
-/pipeline-setup-v7   # compile aidp depuis le dépôt aidp, installe les hooks et les commandes, configure le PATH, installe graphify (optionnel)
+powershell -NoProfile -ExecutionPolicy Bypass -File D:\AIDP\skill\setup-gamedev.ps1 -Project D:\CLAUDE_UNITY\<projet>
 /pipeline-doctor-v7  # vérifie l'installation (binaire, compatibilité avec le skill, templates, hooks)
 ```
 
-C'est tout. Pour mettre `aidp` à jour, faites `git pull` dans le dépôt aidp, relancez `/pipeline-setup-v7`,
-puis ouvrez un nouveau terminal. `/pipeline-setup-v7` exécute `setup.ps1` / `setup.sh` de ce dossier selon
-l'OS ; ces scripts lancent eux-mêmes le `bootstrap` du dépôt aidp. Si `aidp doctor` signale `skill_compat`,
-le binaire est plus ancien que le `min_aidp_version` de `SKILL.md` : mettez le dépôt aidp à jour.
+`setup-gamedev.ps1` (ou `/pipeline-setup-gamedev-v7`) pose `AIDP_SKILL_ROOT=D:\AIDP\skill` et
+`AIDP_GATEWAY_DIR=D:\AIDP\gateway`, ajoute le hook Stop à `~/.claude/settings.json`, écrit le vault et
+`ci.enabled: false` dans `~/.aidp/config.json`, copie agents et commandes dans `<projet>\.claude\`, puis
+lance `aidp validate --all` et `aidp doctor`. Ces deux fichiers de config sont les seuls écrits sur C:
+(Claude Code et aidp ne les lisent que là) ; leurs sauvegardes vont dans `D:\AIDP\backup\`. Le script
+est relançable. Si `aidp doctor` signale `skill_compat`, le binaire est plus ancien que le
+`min_aidp_version` de `SKILL.md` : recompilez-le depuis le dépôt aidp. Un `ci_autopilot_hooks` rouge est
+attendu (pas de CI dans ce profil).
 
-> **Note :** Claude positionne automatiquement la variable `AIDP_SKILL_ROOT` sur ce dossier pour
-> que les templates v7 soient découverts (et non ceux de v4). Vous n'avez rien à faire — mais si
-> vous lancez `aidp` à la main dans un terminal, pensez à la définir :
-> `$env:AIDP_SKILL_ROOT = "$HOME\.claude\skills\ai-dev-pipeline-v7"` (PowerShell).
+> **Note :** Claude utilise la variable utilisateur `AIDP_SKILL_ROOT` pour que les templates v7 soient
+> découverts (et non ceux de v4). Si vous lancez `aidp` à la main dans un terminal ouvert avant le
+> setup : `$env:AIDP_SKILL_ROOT = "D:\AIDP\skill"` (PowerShell).
 
 ---
 
@@ -105,21 +109,14 @@ le binaire est plus ancien que le `min_aidp_version` de `SKILL.md` : mettez le d
 La commande principale est **`/run-pipeline-v7 [template] [cible]`** :
 
 ```
-/run-pipeline-v7 dev SQIPI-1234          # implémenter un ticket Jira
-/run-pipeline-v7 audit src/MyService     # auditer un service
-/run-pipeline-v7 study "migration Aurora → DynamoDB"
-/run-pipeline-v7 ticket-create docs/prd-fraude.md
-/run-pipeline-v7 test-us-e2e SQIPI-1234  # tester une US automatiquement sur dev
+/run-unity-dev-pipeline 42                 # dev-unity, review-unity puis fix-review-unity sur l'issue #42
+/run-pixelart-pipeline 43                  # pixelart sur l'issue d'asset #43
+/run-pipeline-v7 dev-unity 42              # une seule pipeline
+/run-pipeline-v7 knowledge-init .          # amorcer la base de connaissance du projet
+/run-pipeline-v7 dev-aidp                  # faire évoluer aidp (depuis D:\AIDP\src\aidp)
 ```
 
-Pour l'auto-test d'une US sur dev, `test-us-e2e` enchaîne `test-scenarios` (conception
-du kit exécutable) puis `run-tests-dev` (déploiement dev optionnel + exécution HTTP /
-Mongo / SQS + rapport pass/fail). Prérequis une seule fois : un fichier
-`.aidp/dev-target.json` (voir la skill `dev-target-config`) et les CLIs `mongosh`,
-`aws`, `gh` sur le PATH — `aidp dev check` vérifie tout.
-
-Les phrases naturelles fonctionnent aussi : *« lance la pipeline v7 dev sur SQIPI-1234 »*,
-*« run pipeline v7 audit »*.
+Les phrases naturelles fonctionnent aussi : *« lance la pipeline v7 dev-unity sur l'issue 42 »*.
 
 Si vous omettez le template ou la cible, Claude vous les demandera (il ne les devine **jamais**).
 Il vous demandera aussi la valeur des inputs à choix multiples (ex. le `track`), avec le défaut
@@ -134,20 +131,20 @@ Voici ce qui se passe, étape par étape, du point de vue utilisateur :
 1. **Choix du template** — Claude liste les pipelines disponibles et vous demande de choisir.
 2. **Collecte des inputs** — pour chaque input à choix (`enum`), une question vous est posée
    (ex. *track : quick / standard / deep*). Les inputs texte viennent de la cible que vous avez
-   donnée (clé Jira, chemin…).
+   donnée (numéro d'issue, chemin…).
 3. **Initialisation** — `aidp run init` crée l'état du run et construit/rafraîchit le graphe de
    connaissance du workspace.
 4. **Compilation** — `aidp workflow emit` génère le script `workflow.js` déterministe.
 5. **Exécution** — le Workflow tourne en arrière-plan. Vous voyez la progression par stage ;
    les stages indépendants tournent en parallèle. Chaque sous-agent rend une réponse structurée
    validée par schéma.
-6. **Plan exécutable** (pipelines `dev` / `dev-lambda-ts`) — quand le planner a écrit son
+6. **Plan exécutable** (pipelines `dev-aidp` / `dev-studio`) — quand le planner a écrit son
    `plan.json` (un objet par tâche), le run s'arrête une fois sur `awaiting_plan` : `aidp` relit le
    plan, **génère la fin du workflow** en parallélisant les tâches, puis le run reprend
    automatiquement. Vous ne validez rien à ce moment-là (ce n'est pas un gate) ; Claude peut vous
    montrer l'ordonnancement retenu (`aidp workflow plan-status`).
-7. **Gates** — quand un stage gated se termine (ex. le plan en track `deep`, ou la PR), le run se
-   met en pause et Claude vous demande : *« Approuver le stage `plan` ? »* → **approve** continue,
+7. **Gates** — quand un stage gated se termine (ex. `write_knowledge` dans `knowledge-init`), le run
+   se met en pause et Claude vous demande : *« Approuver le stage `write_knowledge` ? »* → **approve** continue,
    **abort** arrête proprement avec un résumé.
 8. **Blocages** — si un sous-agent est bloqué (info manquante, prérequis absent), le run se met en
    pause et Claude vous relaie ses questions. Vous fournissez ce qui manque, puis relancez.
@@ -167,175 +164,47 @@ périmètre d'écriture.
 
 | id | Cible / inputs clés | À utiliser pour | Gates |
 |---|---|---|---|
-| `dev` | clés Jira (une ou plusieurs US d'une même feature) + `track` + `stack` (`generic`\|`lambda-ts`, Lot T) | Implémenter un ticket de bout en bout (pipeline phare, **plan-driven** : les tâches du plan — code ET tests — sont parallélisées par `aidp`). `stack` route les skills de `implement` : `generic` (défaut) garde le jeu multi-stack d'aujourd'hui, `lambda-ts` bascule sur le jeu resserré de `dev-lambda-ts.yaml`. | plan (si `deep`), PR |
-| `dev-csharp` | **clés Jira OU `prompt`** (+ `feature`, `track`) | Comme `dev` (**plan-driven**), optimisé C#/.NET Betclic — contexte et review **parallélisés**. Accepte une demande sans ticket (§ *Jira ou prompt*). | plan (si `deep`), PR |
-| `dev-lambda-tsgit` | **clés Jira OU `prompt`** (+ `feature`, `track`) | Comme `dev-csharp` mais stack AWS Lambda TypeScript Betclic (tests jest). Accepte une demande sans ticket (§ *Jira ou prompt*). | plan (si `deep`), PR |
-| `dev-lambda-ts` | clés Jira + `track` | Comme `dev` (**plan-driven**), stack AWS Lambda TypeScript Betclic. | plan (si `deep`), PR |
-| `dev-angular` | clés Jira + `feature?` + `track` | Comme `dev` (**plan-driven**), stack Angular v22 Betclic front-end — chaque tâche de `implement` tourne dans son propre worktree git. | plan (si `deep`), PR |
-| `dev-local` | `feature_file` (un `.txt` local) + `target_path?` + `track` | Comme `dev` mais 100 % local : pas de Jira, pas de Confluence, pas de git, pas de PR — le run se termine sur un stage `summary`. | plan (si `deep`) |
-| `dev-unity` | `issue?` + `prompt?` + `feature?` + `playtest?` | Plan → implémentation → PR draft → test dans l'éditeur Unity (MCP Unity + computer use) → corrections du playtest. Profil perso (`docs/perso-profile.md`). | — |
+| `dev-unity` | `issue?` + `prompt?` + `feature?` + `playtest?` | Plan → implémentation → PR draft → test dans l'éditeur Unity (MCP Unity + computer use) → corrections du playtest. | — |
 | `review-unity` | `issue?` + `pr?` + `feature?` | Review Unity de la PR : toute l'issue est-elle faite (CA, tests, actions manuelles, preuves de playtest), puis le code. Commentaires inline si corrections, sinon rapport de vérification complet. | — |
 | `fix-review-unity` | `issue?` + `pr?` + `feature?` + `playtest?` + `mark_ready?` | Corrige les commentaires de review ouverts, re-teste dans l'éditeur, passe la PR en ready. `/run-unity-dev-pipeline <issue>` enchaîne les trois. | — |
-| `dev-csharp-short` | clés Jira | Démo/test du moteur : Plan (gate) → Code, rien d'autre. Volontairement **non** plan-driven (plan en prose). | plan |
-| `dev-model-mix` | clés Jira + `track` | Variante **plan-driven** de `dev` sans étude : `plan` sur opus, `pr` sur haiku. | plan (si `deep`), PR |
-| `dev-from-audit` | clés Jira + chemin du rapport d'audit + `track` | **Plan-driven**. Implémenter un ticket en s'appuyant sur un audit antérieur ; les tests sont des tâches du plan. | plan (si `deep`), PR |
-| `dev-from-audit-lambda-ts` | clés Jira + chemin du rapport d'audit + `track` | Comme `dev-from-audit` (**plan-driven**), stack AWS Lambda TypeScript Betclic (tests jest). | plan (si `deep`), PR |
-| `dev-composed` | clés Jira + `target_path` | Démo de composition : plan → implement (**plan-driven**) → **pipeline `audit` imbriquée** → PR. | PR |
-| `dev-csharp-fraud-stack` | comme `dev-csharp` + `service`, `service_repo`, `stack_dir?` | `dev-csharp` avec une porte qualité en plus : le service est recompilé depuis l'arbre du run et la suite de non-régression locale Fraud rejouée entre l'implémentation et la review. | plan (si `deep`), rapport de stack, PR |
-| `dev-aidp` | `prompt` + `feature` + `track` | Développe `aidp` lui-même (le workspace Rust, les templates, les schémas, la prose — ce guide inclus). Pas de Jira pour ce dépôt : la demande est toujours en texte libre. | plan (si `deep`), PR |
-| `dev-aidp-viewer` | `prompt` + `feature` + `track` | Développe `aidp-viewer` (client React/Tailwind + proxy Express + types partagés) — même famille que `dev-aidp`. | plan (si `deep`), PR |
-| `test-csharp` | clés Jira + `feature?` + `track` | Écrit uniquement des tests (xUnit + Reqnroll) pour une fonctionnalité **existante** — pas de stage `code`. | plan (si `deep`), PR |
-| `audit` | `target_path` | Auditer un service sur 4 axes (correctness, security, perf, maintainability) **en parallèle**, avec passe adversariale anti-faux-positifs. Composable via `uses:` (double usage, § note plus bas). | rapport |
-| `study` | `topic` (+ `scope_paths`) | Étude technique : investigation → synthèse → publication optionnelle. | synthèse |
-| `study-to-jira` | `topic` | Étude → tickets Jira : investigue un sujet, décompose la recommandation en stories, puis crée les tickets. | review, création des tickets |
-| `tech-doc` | `service_path` + `publish` | Doc technique (architecture événementielle, microservice) → Confluence. | publication (si `publish`) |
-| `func-doc` | `feature` (+ clé Jira) | Doc fonctionnelle : user stories, parcours, edge cases. | review finale |
-| `discovery` | `brief` | Brainstormer un backlog depuis un PRD ou un brief vague. | idéation |
-| `ticket-create` | `source` + `project_key` (+ `parent_epic`) | Découper un epic/PRD en stories Jira et les créer. | décomposition |
-| `knowledge-init` | `.` ou un chemin de service | Amorce la base de connaissance d'un service depuis zéro (6 balayages en parallèle) — à lancer une fois, avant tout autre pipeline sur ce service. | write_knowledge |
-| `pr-comments` | n° ou URL de PR (auto-détecté sinon) + `track` + `feature?` | Traiter les commentaires de review d'une PR : classifier → planifier → corriger → répondre par thread. | plan, commit & reply |
+| `pixelart` | `prompt` + `asset_kind?` + `source?` + `view?` + `size?` + `palette?` + `feature?` | Brief de direction artistique → génération Pixellab → animation → revue notée → retouche → export Unity. `/run-pixelart-pipeline <issue>` construit le `prompt` depuis l'issue. | — |
+| `dev-aidp` | `prompt` + `feature` + `track` | Développe `aidp` lui-même (workspace Rust, schémas, docs), selon l'`AGENTS.md` du dépôt. La demande est toujours en texte libre. **Plan-driven.** | — |
+| `dev-studio` | `prompt` + `feature` + `workspace?` + `track` | Développe `aidp-studio`, le front du daemon (Vite, React, TypeScript strict, Tailwind, TanStack Query/Router). Le front affiche, le daemon décide. **Plan-driven.** | — |
+| `knowledge-init` | `.` ou un chemin de projet | Amorce la base de connaissance d'un projet depuis zéro (6 balayages en parallèle) — à lancer une fois. | write_knowledge |
+| `dev-exemple` | `prompt` + `feature` | Démo minimale (contexte, plan, implémentation), sans skill ni gate. | — |
 
-> Pour corriger seulement quelques threads choisis, sans pipeline : `aidp gh pr-fix <repo> <n> --threads <ids> [--points <ids>] [--note-file -]` lance une session autonome libre via le daemon. Elle corrige, répond sur chaque thread et pousse sur la branche de la PR. `pr-comments` reste la voie pour classifier, planifier et traiter tous les commentaires.
-| `gha-fix` | n° de PR (auto-détecté sinon) + `track` + `feature?` | Remettre un build **GitHub Actions** au vert : logs des jobs en échec réduits à l'erreur réelle → classement par cause racine → correction → reproduction locale → push + attente du verdict. Sépare strictement ce que le code peut corriger de ce qu'il ne peut pas (flaky, infra, secret expiré). Déclenché automatiquement par l'autopilot CI (§11bis). | plan, push & watch |
-| `sonar-fix` | n° de PR (auto-détecté sinon) + `scope` (`new_code` / `gate_only` / `all_issues`) + `track` + `feature?` | Faire repasser un **quality gate SonarQube** au vert *honnêtement* : gate + issues + hotspots + la *règle* derrière chaque issue → décision par issue → correction et tests → push + relecture du gate. Toute triche (`NOSONAR`, exclusion, seuil abaissé, test sans assertion) est un finding bloquant. Déclenché automatiquement par l'autopilot CI (§11bis). | plan, push & recheck |
-| `refacto-pr-lambda-ts` | n° de PR (auto-détecté sinon) + `track` | Refactorer le code **modifié par une PR** sur un service Lambda TS : 3 axes de scan en parallèle → plan → filet de sécurité (caractérisation + Stryker) → refacto plan-driven → double vérification → push sur la branche de travail. | plan, filet (si `deep`), push |
-| `fraud-stack-test` | `service?`, `service_repo?`, `scenarios?` | Rejoue la suite de non-régression de la stack locale Fraud contre un microservice réel en Docker (zéro appel externe). Composable via `uses:` (double usage, § note plus bas). | rapport |
-| `gdpr-anonymisation-test` | `layers?` (`local`\|`dev`\|`both`) | Teste l'anonymisation RGPD sur deux couches : harnais LocalStack et joueur réel dev/stage2 provisionné → clos → anonymisé. | dev_fixture (avant de toucher un environnement partagé), rapport |
-| `cartography-fraud` | `service`, `repo_path`, `runtime?` (`csharp`\|`lambda-ts`) | Cartographie tout ce qu'un microservice Fraud touche hors de son propre processus, plus un brouillon de descripteur pour `localstack/fraud-stack`. Lecture seule sur le dépôt du service. | aucune (relecture des affirmations, pas d'approbation humaine) |
-| `datadog-dashboard-fraud` | `action` (`create`\|`update`), `objective`, `dashboard_id?` | Brouillon de dashboard Datadog pour la squad Fraud uniquement, bloqué si le tag `team:fraud` manque. | review_guardrail |
+> Pour corriger seulement quelques threads choisis, sans pipeline : `aidp gh pr-fix <repo> <n> --threads <ids> [--points <ids>] [--note-file -]` lance une session autonome libre via le daemon. Elle corrige, répond sur chaque thread et pousse sur la branche de la PR.
 
-**Fragments (`kind: fragment`, Lot T) — jamais lancés seuls.** Cinq ids du parc n'existent que pour être
-composés via `uses:` dans un autre template ; les lancer directement (`run init --pipeline <id>`) produit
-un run dont les stages n'ont de sens que branchés à autre chose : `review` (les 4 dimensions de rubrique
-en parallèle — le stage `review` du template phare `dev` juste en dessous), `dev-discovery` (le contexte
-Jira/prompt ‖ Confluence ‖ code, § *Jira ou prompt* plus bas), `knowledge-read` / `knowledge-update`
-(lecture puis mise à jour de la base de
-connaissance, §9), et `dev-tests-csharp-split` (la phase de tests C# composable — `tests_unit` ‖
-`tests_reqnroll` → `tests_suite` — que `dev-csharp` branche après `implement`). `audit`, `fraud-stack-test`,
-`run-tests-dev` et `test-scenarios` sont, eux, à **double usage** : lançables seuls (lignes ci-dessus) ET
-composables via `uses:` — ils ne déclarent donc aucune clé `kind:`, le défaut (`pipeline`) suffisant aux
-deux usages. Détail complet de chaque id : docs/agents-reference.md §12.
+**Fragments (`kind: fragment`) — jamais lancés seuls.** `review` (les 4 dimensions de rubrique en
+parallèle, puis la synthèse), `knowledge-read` et `knowledge-update` (lecture puis mise à jour de la
+base de connaissance, §9) n'existent que pour être composés via `uses:` dans `dev-aidp` et
+`dev-studio`. Détail : docs/agents-reference.md §12.
 
-### Le template phare : `dev`
-
-Flux complet (gates en **gras**) :
+### `dev-aidp` et `dev-studio`
 
 ```
-prepare_branch → discover → study* → **plan** → implement → review
-                                                     ↘ correction_loop (si findings bloquants, max 2 itérations)
-                                                                → **pr**
+prepare_branch → knowledge ‖ read_* → discover → study* → plan → implement (plan-driven)
+     → [dev-studio : verify] → review** → correction_loop** → pr
 ```
+
+`*` sauté en track `quick` (`dev-aidp` seulement) ; `**` en track `deep` seulement.
 
 `implement` n'est pas un stage écrit à la main : il est **compilé depuis `plan.json`** (une tâche =
-un sous-agent). Les tâches dont les fichiers sont disjoints tournent en parallèle (4 max par défaut) ;
-celles qui écriraient le même fichier sont sérialisées par `aidp`. Un sous-agent de merge termine :
-fichiers partagés, build, suite de tests, `changed-files.json` consolidé.
-
-- **prepare_branch** — synchronise master et crée `feat/<TICKET>` ; tout le reste atterrit dessus.
-- **discover** (analyzer) — lit la demande (ticket Jira **ou** prompt), Confluence et le code (via le
-  graphe) → `context.md`.
-- **study** (analyzer) — synthèse d'étude ; *sauté en track `quick`*.
-- **plan** (planner, opus) — **plan exécutable** → `plan.json` (un objet par tâche : prompt,
-  instructions, dépendances réelles, et les fichiers que la tâche écrit) + `plan.md` (la narration
-  pour vous : design, risques, rollback) ; **gate humain en track `deep`**.
-- **implement** (executor, scope `repo_wide`) — compilé depuis `plan.json` : N sous-agents en
-  parallèle + merge. Les tests font partie du plan (`kind: tests`), il n'y a donc plus de stage
-  `tests` séparé — et plus d'hypothèse de stack dans le template.
-- **review** (reviewer) — audit structuré → `findings.json` + `summary.md`.
-- **correction_loop** — si findings bloquants : replan → refix → re-review, 2 itérations max.
-- **pr** (executor, scope `stage_dir_only`) — **gate humain**, puis PR + notification Teams.
+un sous-agent). Les tâches dont les fichiers sont disjoints tournent en parallèle ; celles qui
+écriraient le même fichier sont sérialisées par `aidp`. Un sous-agent de merge termine : fichiers
+partagés, build, suite de tests, `changed-files.json` consolidé. `pr` commite sur `feat/<feature>` et
+n'ouvre une PR que si le dépôt a un remote.
 
 ### Choisir son track
 
-| Track | Étude | Gate sur le plan | Quand |
+| Track | Étude (`dev-aidp`) | Revue quatre axes + boucle de correction | Quand |
 |---|---|---|---|
 | `quick` | non | non | petit fix bien cadré |
 | `standard` | oui | non | cas nominal (défaut) |
-| `deep` | oui | **oui** | ticket complexe / risqué — vous validez le plan avant toute écriture de code |
+| `deep` | oui | **oui** | changement complexe ou risqué |
 
-> La **PR est toujours gated**, quel que soit le track : aucun push sans votre accord.
-
-### Spécificité `dev-csharp` : la parallélisation
-
-Les lectures de contexte (demande ‖ Confluence ‖ graphe de code) et les 4 dimensions de review
-(correctness ‖ security ‖ perf ‖ maintainability) tournent chacune dans un bloc `parallel()` —
-c'est du travail en lecture seule, sans collision. Des stages de synthèse (`discover`, `review`)
-agrègent ensuite les résultats.
-
-### Jira ou prompt : d'où vient la demande (`dev-csharp`, `dev-lambda-tsgit`)
-
-Ces deux templates prennent leur demande de **deux façons**, et une seule à la fois :
-
-| Mode | Inputs | Ce qui lit la demande |
-|---|---|---|
-| Jira | `jira_keys: ["SQIPI-1", ...]` | `discover_jira` (skill `analyze-jira-ticket-aidp`) |
-| Prompt | `prompt: "<la demande en clair>"` + `feature: "<slug>"` | `discover_prompt` |
-
-`discover_prompt` produit la **même** note d'exigences qu'un ticket aurait donnée — demande reformulée
-+ citation verbatim, périmètre et hors-périmètre, critères d'acceptation numérotés, hypothèses
-assumées, questions ouvertes, zone de code impactée. Tout ce qui suit (`plan`, `implement`, `review`,
-`correction_loop`, `pr`) est **identique** entre les deux modes.
-
-Les deux stages s'excluent par un `when:` qui ne dépend que des inputs : `aidp workflow emit` le
-résout à la compilation, donc **le stage inutile n'est jamais dispatché** et ne coûte rien (il
-apparaît en `skip ‹stage› (when=false at compile time)` dans le script). En mode prompt, `feature`
-est **obligatoire** : sans liste de tickets, rien d'autre ne peut nommer la branche `feat/<feature>`,
-le dossier du vault et la PR.
-
-Le même mécanisme vit dans la sous-pipeline réutilisable `dev-discovery`, donc n'importe quel autre
-`dev-*` bascule en dual-mode en deux lignes : déclarer `prompt: { required: false, kind: string,
-default: "" }` dans ses `inputs:` et le passer au `with:` du stage composite `discover`. Un template
-qui ne le fait pas reste en mode Jira — `dev-discovery` neutralise `discover_prompt` à la compilation.
-
-### Revue locale d'une PR : `pr-review` puis `verify-review`
-
-Lancez `pr-review` avec la PR en `pr` (passe 1). Pour la passe 2 ou 3, lancez `verify-review` avec
-`pass` et `previous_run` (l'id du run de la passe précédente). Les agents lisent seulement : les
-écritures GitHub passent par `aidp gh review-post` (un commentaire inline par finding dans le diff,
-les autres dans le corps de la review) et `aidp gh thread-reopen`, appelés par le workflow, jamais
-par les templates. La boucle s'arrête quand une passe est propre, ou après la passe 3 avec le statut
-`escalated`.
-
-Les relecteurs ne lancent pas les tests : le contrôle des tests est jugé sur la CI de la PR
-(`ci-status.json`, écrit par le stage `resolve`). CI verte : `pass` ; CI rouge : `fail` avec un finding ;
-CI en cours : `skip`, et le run se met en pause comme pour tout contrôle non évalué. Une PR sans CI
-n'a pas de contrôle des tests, et la synthèse l'écrit (« tests not verified: no CI check on this PR »).
-
-### `dev-flow` et `correction-after-test-dev` : toutes stacks
-
-`dev-flow` implémente une demande (clés Jira ou `prompt`) sur n'importe quelle stack : `csharp`, `lambda-ts`, `angular`, `rust` ou `ts-node`. L'input `stack` choisit la phase de tests à la compilation. `aidp project stack <dossier>` détecte la stack ; le pilote vous la propose. Sans `stack`, `aidp run init` prend celle qu'il détecte dans le dépôt ; `unknown` est refusé au démarrage du run. `pr` vaut `draft` (défaut), `ready` ou `none`. La PR contient une section Hypothèses : les choix que le run a faits seul. Avec `branch_ready: false`, une étape prépare d'abord la branche.
-
-`correction-after-test-dev` corrige les bugs d'un rapport de test DEV (`prompt` : le rapport, puis le ticket) sur une branche et une PR qui existent déjà. Il ne crée ni branche ni PR : il pousse sur la branche courante et commente la PR.
-
-### Spécificité `audit` : la passe adversariale
-
-Après les 4 dimensions parallèles, un stage **`verify`** rejoue chaque finding bloquant en
-essayant de le **réfuter** ; seuls les survivants restent bloquants. Cela élimine les
-faux positifs avant le rapport final (gated).
-
-### Spécificité `refacto-pr-lambda-ts` : le filet avant le code
-
-Deux contraintes structurent ce template, et expliquent son ordre de stages :
-
-1. **Périmètre = le diff de la PR.** `scope_diff` calcule les hunks (`git diff -U0` depuis le
-   merge-base) et les mappe vers les symboles englobants — les « zones ». Tout candidat de refacto
-   hors de ces zones est refusé par les scans et par le plan. On ne reformate rien hors des hunks :
-   ça détruirait le diff du reviewer.
-2. **Rien ne bouge sans preuve.** `safety_net` passe **avant** `refactor` : il écrit les tests de
-   caractérisation des zones que le plan va toucher, prouve leur sensibilité par mutation Stryker
-   scopée (`--mutate`), et rend un verdict par zone. Une zone sous le seuil (`mutation_threshold`,
-   60 par défaut) est `blocked` : son task est `skipped`, pas refactoré. Le filet est commité seul,
-   et un test de caractérisation qui doit changer pour que le refacto passe **est** la preuve d'un
-   changement de comportement → revert du refacto, jamais du test.
-
-Le contrat cardinal est le zéro changement de comportement : `verify_behavior` (opus, charge de la
-preuve inversée) et `verify_health` (métriques avant/après) tournent en parallèle, et tout écart part
-en **backlog** au lieu d'être corrigé au passage. Le run finit par un push sur la branche de travail
-de la PR (jamais de nouvelle branche, jamais de force-push) + un commentaire de synthèse sur la PR.
-
-Les trois skills compagnons portent la méthode : `ts-refactoring-catalog` (24 refactos nommés,
-tiers T0/T1/T2, liste des faux refactos), `refactoring-safety-net` (caractérisation + mutation),
-`lambda-ts-code-health` (baseline/delta objectifs, `health.json` comparable).
+> Côté Unity, aucune pipeline ne merge : le merge reste votre clic (gate `merge_approval` du flow
+> `perso-delivery`).
 
 ---
 
@@ -347,15 +216,15 @@ Tous sont **génériques** ; c'est la liste de `skills` chargée par le stage qu
 |---|---|---|---|
 | **analyzer** | recherche | Lit code, docs, tickets ; explore ; synthétise. | Écrire du code, créer des tickets, pousser. |
 | **planner** | planification | Plans ordonnés et testables ; décompositions epic → stories. | Implémenter le plan. |
-| **executor** | production | **Le seul qui change le monde** : code, tests, tickets Jira, pages Confluence, PRs, messages Teams. | Reviewer son propre travail ; écrire hors de son `scope`. |
+| **executor** | production | **Le seul qui change le monde** : code, tests, PRs, issues et commentaires GitHub, assets pixel art. | Reviewer son propre travail ; écrire hors de son `scope`. |
 | **reviewer** | review | Audite un artefact → `findings.json` structuré. | Appliquer les corrections ; gonfler les findings. |
 
 Exemples de spécialisation d'un executor :
 
-- `dotnet-engineering` + `aws-serverless` → développeur .NET/Lambda ;
-- `pr` + `git-push` + `writing-clearly-and-concisely` → ouvreur de PR ;
-- `create-ticket` + `ticket-decomposition` → rédacteur Jira ;
-- `confluence-microservices` + `event-architecture` → publieur Confluence.
+- `unity-csharp-dev` + `unity-shader-hlsl` → développeur Unity C# / shaders ;
+- `pixellab` + `pixel-art` + `pixel-animation` → pixel artist ;
+- `map-room-design` + `ldtk` → level designer sur les maps LDtk ;
+- `github-issue-ticket` → rédacteur d'issues GitHub.
 
 ---
 
@@ -382,7 +251,7 @@ tokens, jamais 0/N.
 
 ### L'arrêt `awaiting_plan` (ce n'est pas un gate)
 
-Sur une pipeline plan-driven (`dev`, `dev-lambda-ts`), le run s'arrête une fois juste après le
+Sur une pipeline plan-driven (`dev-aidp`, `dev-studio`), le run s'arrête une fois juste après le
 planner : la suite du workflow **n'existe pas encore**, puisqu'elle est générée depuis `plan.json`.
 Claude relance simplement `aidp workflow emit` — qui valide le graphe de tâches, insère les
 dépendances nécessaires pour éviter deux écritures concurrentes du même fichier — puis reprend le
@@ -417,11 +286,11 @@ perdue.
 
 ### Runs natifs autonomes
 
-Un run natif porte un drapeau `autonomous`, fixé au lancement. Il est vrai par défaut pour les lancements du workflow ticket, du dispatcher et du CI autopilot ; depuis le viewer, vous choisissez. Dans un run autonome, toutes les gates sont pré-approuvées et les agents ne posent jamais de question : ils prennent l'option recommandée (sinon la plus prudente et réversible) et la consignent dans `assumptions`. Un stage bloqué deux fois échoue avec la raison `blocked-twice`. Relisez les `assumptions` via `GET /api/runs/:id`. Le mode Workflow ne change pas. Voir `docs/native-execution.md`.
+Un run natif porte un drapeau `autonomous`, fixé au lancement. Il est vrai par défaut pour les lancements d'un flow et du dispatcher ; depuis le front, vous choisissez. Dans un run autonome, toutes les gates sont pré-approuvées et les agents ne posent jamais de question : ils prennent l'option recommandée (sinon la plus prudente et réversible) et la consignent dans `assumptions`. Un stage bloqué deux fois échoue avec la raison `blocked-twice`. Relisez les `assumptions` via `GET /api/runs/:id`. Le mode Workflow ne change pas. Voir `docs/native-execution.md`.
 
 ### Quel mode pour quel lancement
 
-Tout pipeline lancé par le daemon (viewer, `aidp gateway start --template`, dispatcher et Start des tickets, automations, presets, CI autopilot, étape `pipeline` d'un flow) crée un run natif (`mode: "native"`). Autonome par défaut : dispatcher, CI autopilot, étape `pipeline` d'un flow. Non autonome par défaut : viewer (vous choisissez), presets et automations (`autonomous: true` pour activer). Pour revenir à l'ancien chemin (une session Claude qui pilote `workflow.js`), passez `engine: "workflow"` (alias historique `v7`) sur le lancement, le preset ou l'automation. `/run-pipeline-v7` et `aidp workflow emit` restent en mode Workflow. Sur un ticket, `autopilot.run_id` et `autopilot.session_id` portent l'id du run natif. Voir `docs/native-execution.md`.
+Tout pipeline lancé par le daemon (front, `aidp gateway start --template`, dispatcher et Start des tickets, automations, presets, étape `pipeline` d'un flow) crée un run natif (`mode: "native"`). Autonome par défaut : dispatcher, étape `pipeline` d'un flow. Non autonome par défaut : front (vous choisissez), presets et automations (`autonomous: true` pour activer). Pour revenir à l'ancien chemin (une session Claude qui pilote `workflow.js`), passez `engine: "workflow"` (alias historique `v7`) sur le lancement, le preset ou l'automation. `/run-pipeline-v7` et `aidp workflow emit` restent en mode Workflow. Sur un ticket, `autopilot.run_id` et `autopilot.session_id` portent l'id du run natif. Voir `docs/native-execution.md`.
 
 ---
 
@@ -432,13 +301,13 @@ plus dans le dossier `.aidp/` du repo. Les artefacts deviennent des notes liées
 propriétés — au lieu de fichiers enfouis dans l'arbre de build.
 
 ```
-<vault>/                                          C:/CODE/AIDP
+<vault>/                                          D:/AIDP/Vault
 └── Pipelines/
     ├── _Pipelines.md                             tableau de bord : tous les repos, 25 derniers runs
-    └── fraud-alerts-service/                     nom du repo (remote git `origin`)
-        ├── _fraud-alerts-service.md              MOC du repo : toutes ses features
-        └── SQIPI-1234/                           la feature
-            ├── _SQIPI-1234.md                    MOC de la feature : tous ses runs + la recherche
+    └── pixelhood/                                nom du repo (remote git `origin`)
+        ├── _pixelhood.md                         MOC du repo : toutes ses features
+        └── issue-42/                             la feature
+            ├── _issue-42.md                      MOC de la feature : tous ses runs + la recherche
             ├── explore/                          recherche PARTAGÉE entre les runs
             │   ├── _explore.md                   note générée
             │   └── exploration.md                l'artefact de l'agent
@@ -451,25 +320,23 @@ propriétés — au lieu de fichiers enfouis dans l'arbre de build.
                     └── changed-files.json        l'artefact de l'agent
 └── Knowledge/                                    connaissance projet — HORS des runs
     ├── _Knowledge.md                             index : tous les projets documentés
-    └── fraud-alerts-service/                     un dossier par projet
-        ├── _fraud-alerts-service.md              note générée : l'index des deux couches
-        ├── architecture.md                       couche transverse : ce que le service EST
+    └── pixelhood/                                un dossier par projet
+        ├── _pixelhood.md                         note générée : l'index des deux couches
+        ├── architecture.md                       couche transverse : ce que le projet EST
         ├── events.json
-        └── Features/                             couche feature : une note par feature métier
+        └── Features/                             couche feature : une note par feature
             ├── _Features.md                      note générée : le tableau des features
-            ├── auto-exclusion-temporaire.md      règles, flux, carte du code, cas limites
-            └── limites-de-depot.md
+            ├── saut-mural.md                     règles, flux, carte du code, cas limites
+            └── dash.md
 └── TODO/                                         tickets locaux — HORS des runs
     ├── _TODO.md                                  tableau de bord généré
     ├── config.yaml, routing.yaml                 édités à la main
-    ├── fraud-alerts-service/                     un dossier par service
+    ├── pixelhood/                                un dossier par service
     │   └── LOC-1.md                              une note par ticket local
-    ├── unrouted/                                 miroirs Jira dont le service n'a pas pu être déduit
     └── .state/                                   compteur + journal des transitions
-        └── jira-sync.json                        rapport de la dernière synchro
 ```
 
-**Amorcer un service** (à faire une fois, avant tout le reste) :
+**Amorcer un projet** (à faire une fois, avant tout le reste) :
 
 ```bash
 rtk aidp run init --pipeline knowledge-init --inputs '{"service_path":"."}'
@@ -502,12 +369,12 @@ Un stage choisit sa couche : `knowledge: service`, `knowledge: feature`, ou `kno
 deux). Le `stage_dir` d'un stage `feature` **est** `Features/`, donc `scope: stage_dir_only` l'empêche
 de réécrire les notes transverses.
 
-### La boucle, câblée dans `dev-*`, `study`, `tech-doc` et `func-doc`
+### La boucle, câblée dans `dev-aidp` et `dev-studio`
 
 1. **Lecture** — `knowledge-read` est le premier stage de la discovery. Il commence par la **note de la
    feature concernée**, complète avec les notes transverses, résume tout en `knowledge_context.md`, et
-   termine par la liste de ce que le socle **ne dit pas** : c'est exactement ce que les lectures Jira /
-   Confluence / code doivent aller chercher.
+   termine par la liste de ce que le socle **ne dit pas** : c'est exactement ce que les lectures du
+   code doivent aller chercher.
 2. **Injection** — tous les stages de recherche et de planification reçoivent en plus, dans leur
    prompt : la liste des notes transverses, la liste des notes de feature **avec leurs noms et leurs
    alias**, et le nom de la note de feature qui correspond à ce run. Consigne : lire ça avant d'ouvrir
@@ -521,25 +388,26 @@ de réécrire les notes transverses.
 ### Nouvelle feature ou feature existante : `aidp` décide, pas l'agent
 
 C'est le point qui fait ou défait le socle. Un agent à qui on demande en prose de « mettre à jour la
-note si la feature existe déjà » finit par produire `auto-exclusion.md`, `autoexclusion.md` et
-`auto-exclusion-v2.md` — et un socle dupliqué est pire que pas de socle. La décision est donc calculée :
+note si la feature existe déjà » finit par produire `saut-mural.md`, `sautmural.md` et
+`saut-mural-v2.md` — et un socle dupliqué est pire que pas de socle. La décision est donc calculée :
 
 ```bash
-rtk aidp knowledge resolve --name "Auto-exclusion temporaire" --name SQIPI-1234
+rtk aidp knowledge resolve --name "Saut mural" --name GH-42
 ```
 
-Chaque note existante est notée face à chaque requête — nom/alias/slug exact → `1.00`, clé Jira présente
+Chaque note existante est notée face à chaque requête — nom/alias/slug exact → `1.00`, clé de ticket présente
 dans le `tickets:` de la note → `0.95`, sinon recouvrement de mots (accents pliés, mots vides ignorés).
 Le verdict est `update` (≥ 0.78, avec **le fichier à éditer**), `ambiguous` (≥ 0.42, avec les candidates
 à relire), `create` (avec **le chemin exact à écrire**, nommé d'après la feature et jamais d'après un
 ticket), ou `supersede` — la note qui matche le mieux est elle-même périmée, son score est donc plafonné
 à `0.50` (elle reste une candidate, mais ne peut plus être une cible de mise à jour) et la cible devient
 la note nommée par son propre `superseded_by`. Tout stage `knowledge: feature` reçoit ce verdict **déjà calculé** dans son prompt, dérivé des
-inputs du run (`feature`, `jira_keys`, `topic`) — l'agent se voit donner le nom de fichier, il ne le
+inputs du run (`feature` et, quand le template les déclare, les clés de ticket et le sujet) — l'agent
+se voit donner le nom de fichier, il ne le
 choisit pas.
 
-Un cas est signalé explicitement : si les seules requêtes disponibles étaient des clés Jira, le
-résultat porte `weak: true`. « Aucune note ne liste SQIPI-1234 » est vrai de **tout** ticket à son
+Un cas est signalé explicitement : si les seules requêtes disponibles étaient des clés de ticket, le
+résultat porte `weak: true`. « Aucune note ne liste GH-42 » est vrai de **tout** ticket à son
 premier run et ne prouve pas que la feature est neuve : l'agent est alors invité à relancer la
 résolution avec le nom métier lu dans le ticket, et à obéir à ce second verdict.
 
@@ -548,13 +416,13 @@ La résolution lit le frontmatter des notes — `aliases:` et `tickets:` sont do
 ```yaml
 ---
 aidp: knowledge-feature
-feature: Auto-exclusion temporaire du joueur
-slug: auto-exclusion-temporaire        # identique au nom de fichier
-aliases: [self-exclusion, timeout joueur]
-area: Responsible gaming
+feature: Saut mural
+slug: saut-mural                       # identique au nom de fichier
+aliases: [wall jump, wall slide]
+area: Mouvement du joueur
 status: active
-tickets: [SQIPI-1234, SQIPI-1300]
-files: [src/SelfExclusion/SelfExclusionService.cs, src/SelfExclusion/SelfExclusionRepository.cs]
+tickets: [GH-42, GH-57]
+files: [Assets/Scripts/Player/Movement.cs, Assets/Scripts/Player/Collision.cs]
 updated: 2026-08-27
 tags: [aidp/knowledge-feature]
 ---
@@ -573,8 +441,8 @@ Trois règles à retenir :
    `discover`/`study`/`explore`/`research`) écrivent **à la racine de la feature**, pas dans le run :
    partagés entre tous les runs. Un run ultérieur sur la même feature relit cette recherche et la
    complète au lieu de la refaire.
-3. Le segment `<repo>` vient du remote git `origin`, donc deux checkouts du même repo
-   (`.Net/fraud-alerts-service` et `.Net/5448/fraud-alerts-service`) atterrissent au même endroit.
+3. Le segment `<repo>` vient du remote git `origin`, donc deux checkouts du même repo (le checkout
+   principal et un worktree) atterrissent au même endroit.
 
 ### Où `aidp` trouve le vault
 
@@ -584,8 +452,8 @@ Par ordre de priorité, le premier qui répond gagne :
 |---|---|---|
 | 1 | `--vault <chemin>` | sur `rtk aidp run init` — ponctuel |
 | 2 | `AIDP_VAULT` | variable d'env ; `off` / `none` / `0` force l'ancien layout |
-| 3 | `~/.aidp/config.json` | `{"vault": "C:/CODE/AIDP"}` — écrit par `rtk aidp vault init` |
-| 4 | auto-détection | le dossier contenant un `.obsidian/` le plus proche, en cherchant depuis le repo **et parmi ses voisins** (c'est ainsi que `C:/CODE/AIDP` est trouvé depuis `C:/CODE/Lambda/fraud-actions`) |
+| 3 | `~/.aidp/config.json` | `{"vault": "D:/AIDP/Vault"}` — écrit par `setup-gamedev.ps1` ou `rtk aidp vault init` |
+| 4 | auto-détection | le dossier contenant un `.obsidian/` le plus proche, en cherchant depuis le repo **et parmi ses voisins** (c'est ainsi qu'un vault posé à côté des projets est trouvé) |
 | — | rien trouvé | on retombe sur l'ancien `<repo>/.aidp/pipelines/…`, à l'identique |
 
 ```bash
@@ -596,7 +464,7 @@ Affiche le vault retenu, **par quelle source**, le segment `<repo>` de ce worksp
 et un éventuel `ambiguity` (plusieurs vaults à portée — épingle-en un). Pour créer/épingler :
 
 ```bash
-rtk aidp vault init --vault C:/CODE/AIDP
+rtk aidp vault init --vault D:/AIDP/Vault
 ```
 
 Et pour régénérer toutes les notes `_*.md` (après une mise à jour d'`aidp`, ou une note supprimée) :
@@ -608,15 +476,14 @@ rtk aidp vault reindex
 ### Ce qui reste dans le repo
 
 **Rien de ce qu'aidp écrit** — pas même l'état qui appartient au repo plutôt qu'à un run précis. Le
-marqueur `run-in-flight` et le registre `ci-autopilot.state.json` de l'autopilot CI vivent dans
+marqueur `run-in-flight` vit dans
 `<vault>/Pipelines/<repo>/.state/`, préfixé d'un point pour qu'Obsidian comme les générateurs de notes
 passent à côté. La copie laissée dans `<repo>/.aidp/` par un binaire plus ancien est déplacée dès le
 premier accès, et le dossier disparaît une fois qu'il ne reste plus rien de nous dedans.
 
-Ce qui reste dans le repo, c'est **ce que vous y avez mis** : `.aidp/dev-target.json` et
-`.aidp/sonar.json` (config de connexion), `.aidp/ci-autopilot.json` (config autopilot du repo, écrite
-uniquement par un `rtk aidp ci config --save` explicite) et `.aidp/pipeline/flow/` (templates locaux au
-projet). Ce sont des **entrées**, pas des sorties — aidp les lit, ne les crée jamais. Sans vault, le
+Ce qui reste dans le repo, c'est **ce que vous y avez mis** : `.aidp/pipeline/flow/` (templates locaux
+au projet), et dans le profil gamedev `.claude/agents/` et `.claude/commands/` copiés par
+`setup-gamedev.ps1`. Ce sont des **entrées**, pas des sorties — aidp les lit, ne les crée jamais. Sans vault, le
 run bascule en mode legacy et l'état retombe dans `.aidp/` : il n'a nulle part d'autre où aller. Et
 les **runs d'avant la v7** restent où ils sont, sous `.aidp/pipelines/` : rien n'a été migré, et v7
 n'a plus de chemin pour les recharger ou les reprendre.
@@ -625,14 +492,12 @@ Les artefacts principaux, tous validés par les schémas JSON de `schema/` :
 
 | Artefact | Produit par | Contenu |
 |---|---|---|
-| `context.md` | analyzer (discover) | Synthèse du contexte (ticket, docs, code). |
+| `context.md` | analyzer (discover) | Synthèse du contexte (demande, base de connaissance, code). |
 | `plan.json` | planner | **Le plan exécutable** : une tâche par objet (prompt, instructions, `needs`, `files`), + `shared_files` réservés au merge. C'est lui que `aidp` compile. |
 | `plan.md` | planner | La narration du plan pour un humain (design, risques, rollback). |
 | `plan-schedule.json` | `aidp` | L'ordonnancement retenu : vagues, parallélisme, et chaque ordre inséré pour éviter un conflit d'écriture (avec le fichier en cause). |
 | `changed-files.json` | executor (code/tests) | Fichiers créés/modifiés/supprimés, nouvelles dépendances, statut build/lint. |
 | `findings.json` | reviewer | Findings avec sévérité (`blocking` / `major` / `minor` / `info`), fichier/ligne, suggestion. |
-| `options.json` | analyzer (study) | Options comparées : pros/cons, risques, score, recommandation. |
-| `audit-report.md` | executor (audit) | Rapport d'audit final (après passe adversariale). |
 | `pr.json` | executor (pr) | URL et métadonnées de la PR créée. |
 
 Le **résumé de fin de run** (`rtk aidp run summary`) liste chaque stage avec son statut, ses artefacts
@@ -655,17 +520,15 @@ Toutes les commandes sont propres à v7 (suffixe `-v7`) :
 | Commande | Usage |
 |---|---|
 | `/run-pipeline-v7 [template] [cible]` | Lancer une pipeline v7. |
+| `/run-unity-dev-pipeline <issue>` | Enchaîner `dev-unity`, `review-unity` et `fix-review-unity` sur une issue. |
+| `/run-pixelart-pipeline <issue>` | Lancer `pixelart` sur une issue d'asset. |
 | `/pipeline-status-v7` | Lister les runs v7 du workspace. |
 | `/pipeline-resume-v7 [run_id]` | Reprendre un run v7 en pause. |
-| `/pipeline-setup-v7` | Installation one-shot : build `aidp` depuis le dépôt aidp, hooks, commandes, PATH, doctor. |
+| `/pipeline-setup-gamedev-v7 [projet] [vault]` | Setup du profil gamedev (`setup-gamedev.ps1`) : variables, hook Stop, config, agents et commandes du projet, doctor. |
 | `/pipeline-doctor-v7` | Diagnostic de l'installation. |
 | `/pipeline-new-v7` | Scaffolder un nouveau template v7 par Q&A. |
 | `/pipeline-validate-v7 <id\|chemin>` | Valider un YAML contre le schéma. |
 | `/agent-new-v7 [nom]` | Scaffolder un nouveau sous-agent. |
-| `/ci-autopilot-v7 [status\|run\|ack\|off\|on\|reset]` | Piloter l'autopilot CI (§11bis). |
-
-Le benchmark comparatif entre versions reste `/pipeline-bench` (il nécessite que les versions
-comparées soient installées).
 
 ### Commandes `aidp` du vault (terminal)
 
@@ -677,24 +540,10 @@ comparées soient installées).
 | `rtk aidp status` | Liste les runs de ce repo — ceux du vault **et** les anciens restés dans `.aidp/pipelines/`. |
 | `rtk aidp run init … --no-vault` | Exception ponctuelle : garder les artefacts d'un run dans le repo. |
 | `rtk aidp knowledge list --format json-pretty` | Le socle du repo courant : notes transverses, et une ligne par note de feature (slug, nom, alias, tickets). |
-| `rtk aidp knowledge resolve --name "<feature>"` | Nouvelle feature ou feature existante : `update` + le fichier à éditer, `create` + le chemin à écrire, ou `ambiguous` + les candidates. Répétable (`--name` plusieurs fois), les clés Jira comptent. |
+| `rtk aidp knowledge resolve --name "<feature>"` | Nouvelle feature ou feature existante : `update` + le fichier à éditer, `create` + le chemin à écrire, ou `ambiguous` + les candidates. Répétable (`--name` plusieurs fois), les clés de ticket comptent. |
 | `rtk aidp knowledge index` | Régénère les notes d'index du socle (`_<repo>.md`, `Features/_Features.md`, `_Knowledge.md`) — à lancer après une édition à la main. |
 | `rtk aidp knowledge path` | Les chemins résolus des deux couches. |
 | `rtk aidp ticket new --service <repo> --summary "<texte>"` | Crée un ticket local dans `TODO/<service>/<KEY>.md` ; les autres verbes (`list`, `show`, …, `budget`) sont détaillés dans `docs/tickets.md`. |
-
-**Suivi de release.** Une fois un ticket `done` avec une PR mergée, le dispatcher surveille (72 h par
-défaut, `jira.release_watch_hours`) l'apparition d'un tag de release contenant le commit de merge.
-Pour qu'il écrive ce tag dans Jira (`rtk aidp jira issue-edit`) et passe le ticket en QA Validation,
-copiez vous-même ce bloc dans `config.yaml` du vault (proposition, rien n'est écrit pour vous) :
-
-```yaml
-jira:
-  write_back: { on_release: true }
-  status_map: { released: "QA Validation" }
-  release_field: "Package name & Build name"
-```
-
-Détails dans `docs/tickets.md#release-watch`.
 
 Contrairement à `Pipelines/` et `Knowledge/`, `TODO/` n'est pas créé par `rtk aidp vault init` : c'est la
 première commande `rtk aidp ticket` qui le crée à la demande.
@@ -707,7 +556,7 @@ Deux commandes de plus, sans lien avec le vault, mais qui se tapent au même end
 | Commande | Usage |
 |---|---|
 | `rtk aidp findings merge --input <fichier> --input <fichier> ... --out <fichier>` | Fusionne plusieurs `findings.json` d'axes de revue (correctness/sécurité/perf/maintenabilité) en un seul : recalcule les compteurs au lieu de les recopier, déduplique les findings identiques en gardant la sévérité maximale, et sort en erreur — en nommant le fichier fautif — si un axe est absent, illisible, ou ment sur ses propres comptes. |
-| `rtk aidp setup agents [--dest <dossier>] [--force]` | Installe les agents restreints (`aidp-analyzer-ro`, `aidp-planner-ro`, `aidp-reviewer-ro`) dans `~/.claude/agents/` — condition d'entrée de `settings.tool_enforcement: strict` (§11). Refuse d'écraser un fichier existant sans `--force` (ce registre est partagé avec vos autres agents). |
+| `rtk aidp setup agents [--dest <dossier>] [--force]` | Installe les agents restreints (`aidp-analyzer-ro`, `aidp-planner-ro`, `aidp-reviewer-ro`) dans `~/.claude/agents/` par défaut (`setup-gamedev.ps1` passe `--dest <projet>\.claude\agents`) — condition d'entrée de `settings.tool_enforcement: strict` (§11). Refuse d'écraser un fichier existant sans `--force` (ce registre est partagé avec vos autres agents). |
 
 Un `findings.json` d'axe déclare désormais aussi ce qu'il a **contrôlé**, pas seulement ce qu'il a
 trouvé : un tableau `checks[]` à trois états — `pass`, `fail`, `skip` (ce dernier exigeant un
@@ -716,23 +565,12 @@ un trou.
 
 ### Workflow des tickets : actions et sondes d'attente
 
-Le moteur `rtk aidp flow` enchaîne des actions sur un ticket. Chacune est aussi une commande :
-`rtk aidp jira issue-assign <KEY> --me`, `rtk aidp jira issue-transition <KEY> --to-status <statut>`,
-`rtk aidp gh copilot-review <repo> <n>`, `rtk aidp gh deployment-approve <run_id>`, `rtk aidp flow ci-watch`,
-`rtk aidp flow deploy-dev`, `rtk aidp flow notify-teams`, `rtk aidp flow git-branch <KEY>` et
-`rtk aidp flow jira-comment <KEY> --body-file <fichier>`. Elles impriment du JSON ; un refus métier
-(Copilot indisponible, approbation refusée, branche distante avec des commits étrangers) sort en code 6.
-
-Un flow peut attendre un événement externe grâce à trois sondes de `wait` :
-
-- `ci.checks` : tous les checks du dernier commit de la PR sont terminés ;
-- `copilot.review` : la revue Copilot est arrivée ;
-- `pr.reviews` : les revues humaines de la PR sont arrivées.
-
-La configuration du dépôt vit dans `.aidp/flow.json` (workflows CI, projet Sonar, workflow et
-environnement de déploiement, `teams.enabled`, `copilot.enabled`, `caps.worktrees`), fusionnée par-dessus la
-clé `flow` de `~/.aidp/config.json`. `deploy.dev` et `gh.merge` ne s'exécutent qu'après le clic de la
-personne qui valide : le flow s'arrête sur une approbation, jamais de lui-même.
+Le moteur `rtk aidp flow` enchaîne des actions sur un ticket. Celles de `perso-delivery` :
+`git.worktree`, `git.branch`, `gh.pr_ready`, `gh.merge` et `worktree.remove` (aussi en commande :
+`rtk aidp flow git-branch <KEY>`). Elles impriment du JSON ; un refus métier (branche distante avec des
+commits étrangers, par exemple) sort en code 6. Un flow peut attendre un événement externe avec une
+étape `wait` (sonde `pr.reviews` : les revues humaines de la PR sont arrivées). `gh.merge` ne s'exécute
+qu'après le clic de la personne qui valide : le flow s'arrête sur une approbation, jamais de lui-même.
 
 ---
 
@@ -752,11 +590,11 @@ Le système applique une défense en profondeur :
 3. **Isolation worktree (opt-in).** Un stage peut déclarer `isolation: worktree` pour exécuter son
    sous-agent dans un git worktree isolé — utile uniquement pour des executors qui **écrivent en
    parallèle** (aucun intérêt pour des reviewers en lecture seule).
-4. **Gates sur les actions irréversibles.** PR, publication Confluence, création de tickets :
+4. **Gates sur les actions irréversibles.** Merge, publication, création d'issues :
    toujours derrière une validation humaine ou une condition explicite.
 5. **Encadrement des passages non fiables (frontière inter-stage).** La sortie d'un sous-agent
    (`summary`, `follow_ups`) devient littéralement une partie du prompt du stage suivant — diff,
-   log CI, ticket ou note du vault compris. Un scanner encadre les passages suspects dans un bloc
+   log, issue ou note du vault compris. Un scanner encadre les passages suspects dans un bloc
    `<<<UNTRUSTED_UPSTREAM ...>>> ... <<<END_UNTRUSTED>>>`, accompagné d'une phrase rappelant que
    c'est une **donnée**, jamais une instruction. Rien n'est supprimé et rien n'est bloqué : c'est un
    encadrement, plus une trace — les trouvailles remontent sous `guard_findings` dans le résultat
@@ -776,7 +614,7 @@ Le système applique une défense en profondeur :
    partagé avec vos autres agents), et `rtk aidp doctor` gagne un check `agent_toolsets` qui est la
    condition d'entrée : tant qu'il est rouge, `rtk aidp workflow emit` refuse d'émettre en `strict`.
    **Limite honnête, à écrire noir sur blanc :** `Bash` reste dans l'allowlist de lecture seule,
-   parce qu'un analyzer en a besoin (`rtk git diff`, `rtk dotnet build`). La restriction empêche donc
+   parce qu'un analyzer en a besoin (`rtk git diff`, `rtk cargo check`). La restriction empêche donc
    l'usage des **outils d'édition**, pas l'écriture par shell. La vraie borne d'écriture reste la
    vérification de scope a posteriori, `rtk aidp scope verify --run <id>` (point 2 ci-dessus).
 
@@ -797,118 +635,13 @@ Le système applique une défense en profondeur :
 
 ---
 
-### Livraison par flow (`dispatcher.launch`)
+### Livraison par flow
 
-Avec `dispatcher.launch: flow` (defaut `session`), le daemon livre un ticket de bout en bout par le flow `ticket-delivery`, ou a la demande via `POST /api/tickets/:key/flow`. Tant que le flow est actif, le ticket ne recoit ni session ni run de l'autopilot CI : la raison de skip `owned-by-flow` est normale. Detail dans `docs/flows.md`.
-
-Pour un ticket local, le flow `local-delivery` enchaine worktree, dev, CI, revue locale et merge humain, sans etape Jira, sans deploiement DEV et sans notification Teams : `POST /api/tickets/:key/flow` avec le corps `{"flow": "local-delivery"}`.
-
-Pour un projet perso sans CI ni Copilot, le flow `perso-delivery` enchaine worktree, `dev-unity` et merge humain, sans bloc CI : `POST /api/tickets/:key/flow` avec le corps `{"flow": "perso-delivery"}`. Le pipeline reprend le workflow du skill `unity-issue-workflow` (implémentation, review GitHub, corrections). Configuration et contraintes Unity : `docs/perso-profile.md`.
-
-## 11bis. CI autopilot — réagir tout seul aux events CI
-
-### Le problème
-
-Claude Code n'a pas de hook « la CI a échoué ». Ses hooks se déclenchent sur **son** cycle de vie
-(avant un outil, après un outil, fin de tour…), pas sur celui de GitHub. Donc, par défaut, il faut
-venir lui dire « la CI est rouge, corrige ».
-
-`rtk aidp ci` supprime cette étape.
-
-### Comment ça marche
-
-Trois moments où réagir est utile, trois hooks — tous le même binaire, qui lit le JSON du hook sur
-stdin et répond en JSON de hook. Aucun quoting PowerShell dans `settings.json`.
-
-| Moment | Hook | Ce qui se passe |
-|---|---|---|
-| Après un `rtk git push` | `PostToolUse` (Bash), `asyncRewake: true` | Le hook part **en tâche de fond** et surveille les checks jusqu'à 30 min. Dès que ça passe au rouge, il sort en 2 et **réveille la session**. Vous pushez, vous passez à autre chose, Claude revient vers vous avec la panne. |
-| Fin de tour | `Stop` | S'il reste un signal non traité, sort en 2 avec la directive : Claude enchaîne au lieu de s'arrêter. |
-| Prompt suivant | `UserPromptSubmit` | Cache uniquement (jamais de réseau, votre prompt n'attend rien) ; son stdout devient du contexte. |
-
-Trois signaux, trois pipelines :
-
-| signal | déclencheur | pipeline |
-|---|---|---|
-| `gha` | checks GitHub Actions en échec sur le head sha de la PR | `gha-fix` |
-| `sonar` | quality gate SonarQube rouge, ou issues sur le nouveau code | `sonar-fix` |
-| `comments` | threads de review non résolus | `pr-comments` |
-
-Au réveil, Claude invoque la skill **`ci-autopilot`**, qui lit `rtk aidp ci dispatch` et enchaîne les
-pipelines **une par une** (elles partagent le même working tree) via le protocole v7 habituel.
-
-Le run est rangé dans le vault sous la clé du ticket Jira de la PR (`feature`), résolue depuis le nom
-de branche (`feat/SQIPI-5694` → `SQIPI-5694`), plutôt que sous le numéro de PR ; `target` reste le
-numéro de PR. Sans clé de ticket dans le nom de branche, le run garde le numéro de PR comme clé —
-le cas normal d'une PR faite à la main.
-
-### Ce qui reste sous votre contrôle
-
-L'autopilot décide **s'il faut démarrer un run**. Il ne décide **jamais s'il faut pusher** : les
-stages `push_and_watch` / `push_and_recheck` / `commit_and_reply` restent des gates. Concrètement :
-Claude diagnostique, corrige et teste tout seul, puis vous demande avant que quoi que ce soit
-n'atteigne GitHub.
-
-### Anti-boucle et anti-collision
-
-Quatre garde-fous, parce qu'un hook qui relance la session est exactement le genre de chose qui part
-en boucle :
-
-1. `stop_hook_active` — un hook `Stop` ne se ré-déclenche jamais sur sa propre continuation.
-2. `max_notifications` (défaut : 1) — un signal non traité réveille la session **une fois**, puis se
-   tait. Il ne réapparaît que si le head sha change (donc si le problème est nouveau).
-3. **« notifié » ≠ « traité »** — vous avoir prévenu ne règle rien : `rtk aidp ci dispatch` renvoie encore
-   le signal. Seul `rtk aidp ci ack` (ou un stage de push réussi) le retire.
-4. `run-in-flight` (dans `<vault>/Pipelines/<repo>/.state/`) — tant qu'un run tourne, l'autopilot
-   n'en démarre pas un second sur le même working tree. Un marqueur de plus de 6 h est considéré
-   comme abandonné et ignoré, pour qu'un run planté ne le fasse pas taire définitivement.
-
-### Piloter
-
-```bash
-rtk aidp ci status --refresh --format json-pretty   # PR, checks, Sonar, threads, signaux dérivés
-rtk aidp ci dispatch                                # quelle pipeline, sur quelle cible, avec quels inputs
-rtk aidp ci ack --all --note "corrigé à la main"    # faire taire l'état courant
-rtk aidp ci config --enable false --save            # couper l'autopilot pour ce repo
-rtk aidp ci config --auto-dispatch false --save     # signaler sans jamais démarrer de run
-rtk aidp ci reset                                   # tout oublier ; tout ce qui est cassé re-signalera
-```
-
-Config : `.aidp/ci-autopilot.json` (par repo) ou `~/.aidp/config.json` → `"ci"`.
-État : `.aidp/ci-autopilot.state.json`. Les deux sont dans `.aidp/`, déjà gitignoré.
-
-Réglages utiles dans le fichier de config : `ignored_branches` (défaut `master`/`main`/`develop`),
-`ignore_draft_prs` (défaut `true` — une PR en brouillon a le droit d'être rouge),
-`watch_timeout_seconds`, `max_notifications`, et le mapping signal → pipeline si vous voulez router
-`gha` vers votre propre template.
-
-### Brancher Sonar
-
-Le host et la clé projet se résolvent dans cet ordre : `.aidp/sonar.json` → `SONAR_HOST_URL` /
-`SONAR_PROJECT_KEY` → `~/.aidp/config.json` → `sonar-project.properties` (la clé y est déjà dans tous
-les repos Fraud). Chez Betclic le host est `https://sonarqube.betclic.net`.
-
-```bash
-rtk aidp sonar config --host https://sonarqube.betclic.net --save   # écrit .aidp/sonar.json
-export SONAR_TOKEN=...                                          # jamais dans le repo
-rtk aidp sonar config                                               # vérifier : has_token doit être true
-rtk aidp sonar report --pr 65                                       # gate + issues + hotspots + mesures
-```
-
-Sans token, **seul** le signal `sonar` est dégradé : `gha` et `comments` continuent de marcher, et
-`rtk aidp ci status` explique pourquoi dans `errors.sonar`.
-
-### Installation
-
-Les hooks sont dans `hooks/ci-events.example.json` et sont installés par `/pipeline-setup-v7`.
-Pour les ajouter sans tout réinstaller :
-
-```bash
-rtk aidp setup merge-hooks   --example ~/.claude/skills/ai-dev-pipeline-v7/hooks/ci-events.example.json   --target ~/.claude/settings.json
-```
-
-Le merge est idempotent (relançable sans doublon) et fait une sauvegarde `.bak`.
-`/pipeline-doctor-v7` affiche l'état sous `ci_autopilot_hooks`.
+Le flow `perso-delivery` enchaîne worktree, branche, `dev-unity`, `review-unity`, `fix-review-unity`,
+PR ready et merge humain, sans bloc CI : `POST /api/tickets/:key/flow` avec le corps
+`{"flow": "perso-delivery"}`. Nommez toujours le flow : celui que le daemon démarre quand la requête
+n'en nomme aucun (`ticket-delivery`, aussi utilisé par `dispatcher.launch: flow`) n'est plus dans ce
+skill. Détail dans `docs/flows.md` du dépôt aidp.
 
 ---
 
@@ -924,7 +657,7 @@ version: 5
 id: mon-pipeline
 description: Une ligne qui dit ce que fait la pipeline.
 inputs:
-  jira_key: { required: true, kind: string }
+  issue:    { required: true, kind: string }
   track:    { required: true, kind: enum, values: [quick, standard, deep], default: standard }
 settings:
   max_correction_iterations: 2      # plafond de la boucle review→fix→re-review
@@ -935,8 +668,8 @@ stages:
     model: sonnet                   # sonnet | opus | haiku — omis, PAS "modèle de la session" : l'émetteur
                                      # écrit toujours un model: résolu par défaut (opus pour un planner,
                                      # sonnet pour tout le reste, cf. "Nouvelles clés (Lot T)" ci-dessous)
-    skills: [graphify-context]      # ← c'est ça qui spécialise l'agent
-    inputs: { jira_key: "{{ inputs.jira_key }}" }
+    skills: [graphify]              # ← c'est ça qui spécialise l'agent
+    inputs: { issue: "{{ inputs.issue }}" }
     outputs: [context.md]           # artefacts que le sous-agent DOIT produire
 
   - name: plan
@@ -955,7 +688,7 @@ stages:
       from: "{{ stages.plan.signals.shards }}"   # dynamique : le planner découpe (contrat injecté)
       # items: ["shard A", "shard B"]            # OU statique (exactement un des deux)
       max: 4                        # plafond de shards concurrents (excédent replié dans le dernier)
-      merge_hint: "Câbler les fichiers partagés (DI, csproj), builder, consolider changed-files.json."
+      merge_hint: "Câbler les fichiers partagés (DI, asmdef), builder, consolider changed-files.json."
 
   # Variante plan-driven du même stage : au lieu de shards nommés par le modèle, le stage est
   # COMPILÉ depuis le graphe de tâches du planner (`plan.json`). C'est `aidp` qui décide la
@@ -983,11 +716,11 @@ stages:
     body: [ ... ]
 
   # Composition : réutiliser une pipeline entière comme un seul stage
-  # - name: qa
+  # - name: review
   #   type: pipeline
-  #   uses: audit
-  #   with: { target_path: "{{ inputs.target_path }}" }
-  #   outputs: [{ name: report, from: report.audit-report }]
+  #   uses: review
+  #   needs: [code]
+  #   outputs: [{ name: findings, from: review.findings }]
 ```
 
 ### Nouvelles clés (Lot 3)
@@ -1014,25 +747,19 @@ Toutes optionnelles ; un template qui n'en déclare aucune garde exactement le c
 | `description` (sur un stage) | stage | *(absent)* | Prose insérée telle quelle dans le prompt du sous-agent, juste après la ligne "Execute the `<stage>` stage of pipeline `<id>`". Sert aussi de texte à l'`AskUserQuestion` du driver quand un stage doit demander quelque chose à l'utilisateur. |
 | `skills_by` | stage | *(absent)* | Route `skills:` selon la valeur d'un input déclaré : `{ input: <nom>, map: { <valeur>: [skill, ...] }, default: [skill, ...] }`. Résolu **à `run init`**, pas à l'émission : `effective-pipeline.yaml` porte directement la liste finale (`skills:` de base puis le paquet choisi, dédupliqués en gardant la première occurrence, ordre préservé) — la clé `skills_by:` elle-même n'existe plus dans le pipeline effectif. À ne pas confondre avec `plan_tasks.skills_by_kind`, qui route par `kind` de tâche de plan et se résout à l'émission, pas à l'init. |
 
-Exemple réel (`templates/dev.yaml`) : le stage `implement` déclare `skills: [graphify-context]` puis
-`skills_by: { input: stack, map: { generic: [...], lambda-ts: [...] }, default: [...] }` — un run avec
-`--inputs '{"stack":"lambda-ts"}'` reçoit exactement le jeu de skills resserré de `dev-lambda-ts.yaml`,
-un run par défaut (`stack` vaut `generic`) reproduit au skill et à l'ordre près le jeu multi-stack
-d'avant ce lot.
-
 ### Règles de conception utiles
 
 - **Parallélisme** : deux stages sans `needs` entre eux (mais avec le même amont) fusionnent en un
   bloc `parallel()`. Pattern recommandé : fan-out de lecteurs indépendants + un stage de synthèse
-  en aval qui garde le nom canonique (voir `dev-csharp.yaml`).
+  en aval qui garde le nom canonique (voir `dev-aidp.yaml` : `knowledge` ‖ `read_rust` → `discover`).
 - **Fan-out intra-stage (`fan_out:`)** : un stage seul peut lancer N sous-agents en parallèle, puis
   un sous-agent de merge qui produit l'enveloppe canonique du stage. Deux sources de shards :
   `items:` (liste statique, ex. catégories de tests) ou `from: "{{ stages.<s>.signals.<prop> }}"`
   (dynamique — l'émetteur injecte alors dans le prompt du producteur l'obligation d'émettre ce
   signal comme lots de travail **disjoints en fichiers**). Les shards partagent le working tree :
-  chaque shard ne touche que ses fichiers et défère les fichiers partagés (DI, csproj,
-  serverless.yml) au merge via `follow_ups`. Source vide → dégradation en 1 seul sous-agent.
-  Utilisé par `dev*`/`dev-csharp`/`dev-lambda-ts` sur `code` (dynamique) et `tests` (statique).
+  chaque shard ne touche que ses fichiers et défère les fichiers partagés (DI, asmdef, manifestes)
+  au merge via `follow_ups`. Source vide → dégradation en 1 seul sous-agent. Utilisé par
+  `knowledge-init` sur `write_features` (dynamique).
 - **Expressions** : `when:` et `gate:` acceptent `in`, `==`, `not` / `and` / `or`,
   `>` `<` `>=` `<=`, `default()` sur `inputs` / `stages` / `settings`.
 - **`when` ≠ `gate`** : `when` décide si le stage s'exécute (conditionnel) ; `gate` met le run en
@@ -1040,29 +767,18 @@ d'avant ce lot.
 - **`isolation: worktree`** : réservez-le aux executors qui écrivent en parallèle ; c'est coûteux
   et inutile en lecture seule.
 - **Choix des skills** : un skill déclaré sur un stage doit porter au moins une règle applicable au
-  livrable de ce stage. Un skill de procédure sur son propre stage (`git-branch-setup`) est accepté.
+  livrable de ce stage. Un skill de procédure sur son propre stage est accepté.
   Un test de garde refuse les paires skill/stage de sa liste d'exclusion.
 - **Règles de skill vérifiées** : la revue lance `rtk aidp skill-rules check` sur le diff de la branche
   (pas de commentaire `//` hors `///` et `//!`, pas de clé de ticket dans les lignes `.rs` ajoutées).
   Les violations sortent en findings `blocking` sur l'axe `skill_rules`, avec fichier et ligne.
-- **`graphify-context` conditionnel** : sans graphe de connaissance pour le run, `rtk aidp workflow emit`
-  retire ce skill de chaque stage et affiche un avertissement par stage.
+- **Graphe de connaissance** : les templates déclarent le skill `graphify`, qui interroge
+  `graphify-out/` quand il existe et se rabat sur Grep/Read sinon. (Le binaire retire encore
+  l'ancien skill `graphify-context` d'un run sans graphe, avec un avertissement par stage.)
 
 ---
 
-## 13. Benchmark v4 vs v7
-
-Les templates v7 gardent les mêmes `id` que v4, ce qui permet un benchmark iso-scénario :
-
-```
-rtk aidp bench run --versions v4,v7 --scenarios all --repeats 3
-```
-
-Le rapport imprime les deltas `v3 → v4` et `v4 → v7` (durée, tokens, build/tests, score d'audit,
-tool calls), plus les KPIs de robustesse propres à v7 : violations de protocole, parse-failures,
-exactitude des gates, reproductibilité. Raccourci : `/pipeline-bench`.
-
-Pourquoi v7 est plus robuste que v4, en une table :
+## 13. Pourquoi v7 est plus robuste que v4
 
 | Sujet | v4 | v7 |
 |---|---|---|
@@ -1079,12 +795,12 @@ Pourquoi v7 est plus robuste que v4, en une table :
 
 | Symptôme | Cause probable | Solution |
 |---|---|---|
-| Les templates v4 apparaissent au lieu des v7 | `AIDP_SKILL_ROOT` absent/incorrect, ou un vieil `aidp` v4 en tête de PATH | Le définir sur ce dossier avant chaque appel `aidp` ; relancer `/pipeline-setup-v7` pour mettre le binaire v7 en tête de PATH. |
-| `aidp: command not found` | dossier release absent du PATH | Ouvrir un nouveau terminal, ou relancer `/pipeline-setup-v7`. |
-| `workflow emit` : sous-commande inconnue | binaire compilé sans `workflow` | Recompiler via `/pipeline-setup-v7`. |
+| Les templates v4 apparaissent au lieu des v7 | `AIDP_SKILL_ROOT` absent/incorrect, ou un vieil `aidp` v4 en tête de PATH | Le définir sur ce dossier (`D:\AIDP\skill`) avant chaque appel `aidp` ; relancer `setup-gamedev.ps1`, qui le pose et met `D:\AIDP\bin` dans le PATH. |
+| `aidp: command not found` | `D:\AIDP\bin` absent du PATH | Ouvrir un nouveau terminal, ou relancer `setup-gamedev.ps1`. |
+| `workflow emit` : sous-commande inconnue | binaire compilé sans `workflow` | Recompiler aidp depuis `D:\AIDP\src\aidp` et le copier dans `D:\AIDP\bin`. |
 | Le run cale après approbation d'un gate | reprise mal formée | Vérifier que la reprise passe `resumeFromRunId` + le gate dans `args.approved_gates` ; les approbations antérieures sont persistées. |
 | Un stage a écrit hors de son `scope` déclaré | rien ne bloque en direct — l'écriture a déjà eu lieu | Vérifier `aidp scope verify --run <id>` (sort en non-zéro sur violation) ou `scope_violations` dans `run-state.json` après réconciliation ; corriger à la main, aucun hook ne l'aurait empêché (§11). |
-| Knowledge graph `skipped` / `failed` | CLI `graphify` absent | Non bloquant. `pip install graphifyy` pour réactiver l'accélération. |
+| Knowledge graph `skipped` / `failed` | CLI `graphify` absent | Non bloquant. Installer `graphify` vous-même (hors C:) pour réactiver l'accélération. |
 | Dates/durées par stage vides dans le résumé | pas d'horloge dans le sandbox Workflow | Voulu — seuls les tokens et statuts sont garantis. |
 | Une tâche de plan est rapportée non exécutée alors qu'elle n'a rien à voir avec l'échec | verrou de fichier (`mutex_after`) confondu avec une vraie dépendance | Vérifier `mutex_after` vs `deps` dans le plan compilé (§9) : une tâche seulement sérialisée par verrou de fichier derrière une tâche en échec est désormais **lancée** (avec l'avertissement « Verrou fichier — prédécesseur en échec » en tête de son prompt), pas annulée. Seule une vraie dépendance déclarée (`needs`) propage l'échec. |
 | Des items reviennent `cancelled` | plancher budgétaire atteint | Voir `settings.budget_floor_tokens` (§12) — `cancelled` veut dire « jamais dispatché », pas « a échoué ». Baisser le plancher, ou le retirer. |

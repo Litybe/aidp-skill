@@ -57,7 +57,7 @@ For each stage, ask:
   - `executor` — writes code, opens PRs, creates tickets (default scope: production)
   - `reviewer` — audits the work, returns findings (default scope: stage_dir_only)
 - **Model** (optional) — `sonnet` / `opus` / `haiku` / `(default — inherit session model)`. Overrides the model family for this stage only. Passed to the Workflow `agent()` call as `model`. If user picks "default", omit the field from YAML.
-- **Skills** (comma-separated, optional) — e.g. `graphify-context`, `dotnet-engineering`, `pr`, `git-push`. Call `rtk aidp skills list` to suggest names.
+- **Skills** (comma-separated, optional) — e.g. `graphify`, `unity-csharp-dev`, `pixel-art`. Call `rtk aidp skills list` to suggest names.
 - **Depends on** (comma-separated previous stage names, optional). Stages with disjoint `needs` run **in parallel** in the emitted Workflow — encourage fan-out where stages are independent.
 - **Outputs** (comma-separated filenames, e.g. `context.md`, `plan.md`, `changed-files.json`).
 - **Scope mode** for executor stages: `production` / `tests` / `stage_dir_only` / `repo_wide`.

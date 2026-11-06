@@ -35,7 +35,7 @@ stages:
       # The findings.json contract, restated in the prompt on purpose. It used to
       # live ONLY in agents/reviewer.md, i.e. in the deployed `~/.claude/agents/
       # reviewer.md` — and that copy is installed by nothing (neither bootstrap
-      # nor /pipeline-setup-v7 touches the agent registry), so it silently drifted
+      # nor the setup command then touched the agent registry), so it silently drifted
       # to a pre-schema shape and all four axes emitted path/summary/nit instead
       # of file/title/info. `aidp findings merge` then exited 1 and stranded the
       # synthesis stage. Restating it here makes the contract travel with the

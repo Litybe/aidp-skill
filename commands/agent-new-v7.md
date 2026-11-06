@@ -31,7 +31,7 @@ Ask via `AskUserQuestion`:
   - `tests`
   - `repo_wide` (rare — explicit allowlist required in stage YAML)
 - **One-line description** — what this agent specializes in. Example: "Authors release notes from a list of merged PRs."
-- **Typical skills** (comma-separated, optional) — the skills this agent is usually paired with. Example: `generating-release-message, writing-clearly-and-concisely`.
+- **Typical skills** (comma-separated, optional) — the skills this agent is usually paired with. Example: `unity-csharp-dev, graphify`.
 
 ### 2. Generate agent.md
 

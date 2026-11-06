@@ -1,0 +1,128 @@
+# Local ticket delivery: from a local ticket to a merged PR and a cleaned worktree.
+# Run by the daemon flow engine. No Jira step, no DEV deployment, no Teams notification:
+# the ticket lives only in the vault backlog and the human merges once the local review is clean.
+id: local-delivery
+version: 1
+inputs:
+  ticket: { required: true }
+settings:
+  # Ceiling of CI fix rounds before the run escalates and the ticket is blocked.
+  ci_fix_max: 3
+  # Ceiling of local review passes.
+  local_review_max: 3
+  copilot:
+    enabled: false
+blocks:
+  # Inserted after every step that pushes.
+  ci:
+    # Dispatch the GHA workflows, wait for the checks, then read the Sonar gate.
+    - id: ci_watch
+      kind: action
+      use: ci.watch
+      phase: CI
+    # Fix loop. gha-fix has priority; sonar-fix runs only once GHA is green.
+    # Reaching the ceiling without green ends the loop escalated (ticket blocked).
+    - id: ci_fix
+      kind: loop
+      phase: CI
+      max: 3
+      until: steps.ci_recheck.outputs.green == true
+      body:
+        - id: gha_fix
+          kind: pipeline
+          use: gha-fix
+          phase: CI
+          pushes: false
+          when: steps.ci_watch.outputs.gha == 'red'
+        - id: sonar_fix
+          kind: pipeline
+          use: sonar-fix
+          phase: CI
+          pushes: false
+          when: steps.ci_watch.outputs.gha == 'green' && steps.ci_watch.outputs.sonar == 'red'
+        # Watch again after the fix push.
+        - id: ci_recheck
+          kind: action
+          use: ci.watch
+          phase: CI
+steps:
+  # 1. Worktree from an up-to-date master, reused when it exists.
+  - id: worktree
+    kind: action
+    use: git.worktree
+    phase: Preparation
+  # 2. Branch feat/<KEY>, or fix/<KEY> for a Bug.
+  - id: branch
+    kind: action
+    use: git.branch
+    phase: Preparation
+  # 3. Dev pipeline (generic dev flow) ending with a draft PR. The ci block follows.
+  - id: dev
+    kind: pipeline
+    use: dev-flow
+    phase: Development
+    pushes: true
+  # 4. Local review of the draft PR, first pass.
+  - id: review
+    kind: pipeline
+    use: pr-review
+    phase: Local review
+  # 5. Local review passes: fix the open threads, then verify, until clean.
+  # Skipped when the first pass posted nothing.
+  - id: local_review
+    kind: loop
+    phase: Local review
+    when: steps.review.outputs.posted > 0
+    max: 3
+    until: steps.verify.outputs.clean == true
+    body:
+      - id: local_fix
+        kind: pipeline
+        use: pr-comments
+        phase: Local review
+        pushes: true
+      - id: verify
+        kind: pipeline
+        use: verify-review
+        phase: Local review
+  # 6. Optional Copilot review, off by default. A missing review is a warning and the run continues.
+  - id: copilot
+    kind: action
+    use: gh.copilot_review
+    phase: Copilot
+    when: settings.copilot.enabled == true
+    on_error: warn
+  - id: copilot_wait
+    kind: wait
+    use: copilot.review
+    phase: Copilot
+    when: settings.copilot.enabled == true
+    on_error: warn
+  - id: copilot_fix
+    kind: pipeline
+    use: pr-comments
+    phase: Copilot
+    pushes: true
+    when: steps.copilot_wait.outputs.threads > 0
+  # 7. Draft PR becomes ready; the local ticket moves to in-review.
+  - id: ready
+    kind: action
+    use: gh.pr_ready
+    phase: Merge
+  # 8. Wait for the human merge click (the approve route); the daemon never merges alone.
+  - id: merge_approval
+    kind: human
+    phase: Merge
+    prompt: Merge the pull request?
+    choices: [approve]
+  # 9. Squash merge pinned on the head sha.
+  - id: merge
+    kind: action
+    use: gh.merge
+    phase: Merge
+  # 10. Remove the worktree after saving any work in progress. A failure is a warning.
+  - id: clean
+    kind: action
+    use: worktree.remove
+    phase: Cleanup
+    on_error: warn

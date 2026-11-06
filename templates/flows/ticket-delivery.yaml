@@ -1,0 +1,221 @@
+# Ticket delivery: from an assigned ticket to a cleaned worktree.
+# Run by the daemon flow engine. Jira steps are skipped for a local ticket.
+id: ticket-delivery
+version: 1
+inputs:
+  ticket: { required: true }
+settings:
+  # Ceiling of CI fix rounds before the run escalates and the ticket is blocked.
+  ci_fix_max: 3
+  # Ceiling of local review passes.
+  local_review_max: 3
+  copilot:
+    enabled: true
+  teams:
+    enabled: true
+blocks:
+  # Inserted after every step that pushes.
+  ci:
+    # Dispatch the GHA workflows, wait for the checks, then read the Sonar gate.
+    - id: ci_watch
+      kind: action
+      use: ci.watch
+      phase: CI
+    # Fix loop. gha-fix has priority; sonar-fix runs only once GHA is green.
+    # Reaching the ceiling without green ends the loop escalated (ticket blocked).
+    - id: ci_fix
+      kind: loop
+      phase: CI
+      max: 3
+      until: steps.ci_recheck.outputs.green == true
+      body:
+        - id: gha_fix
+          kind: pipeline
+          use: gha-fix
+          phase: CI
+          pushes: false
+          when: steps.ci_watch.outputs.gha == 'red'
+        - id: sonar_fix
+          kind: pipeline
+          use: sonar-fix
+          phase: CI
+          pushes: false
+          when: steps.ci_watch.outputs.gha == 'green' && steps.ci_watch.outputs.sonar == 'red'
+        # Watch again after the fix push.
+        - id: ci_recheck
+          kind: action
+          use: ci.watch
+          phase: CI
+steps:
+  # 1. Assign the ticket to the current user. Skipped for a local ticket.
+  - id: assign
+    kind: action
+    use: jira.assign
+    phase: Preparation
+    skip_on: [local]
+  # 2. Jira In Progress. Skipped for a local ticket.
+  - id: jira_in_progress
+    kind: action
+    use: jira.transition
+    phase: Preparation
+    skip_on: [local]
+    with: { to: in-progress }
+  # 3. Worktree from an up-to-date master, reused when it exists.
+  - id: worktree
+    kind: action
+    use: git.worktree
+    phase: Preparation
+  # 4. Branch feat/<KEY>, or fix/<KEY> for a Bug.
+  - id: branch
+    kind: action
+    use: git.branch
+    phase: Preparation
+  # 5. Dev pipeline (generic dev flow) ending with a draft PR. The ci block follows.
+  - id: dev
+    kind: pipeline
+    use: dev-flow
+    phase: Development
+    pushes: true
+  # 6. Local review of the draft PR, first pass.
+  - id: review
+    kind: pipeline
+    use: pr-review
+    phase: Local review
+  # 7. Local review passes: fix the open threads, then verify, until clean.
+  # Skipped when the first pass posted nothing.
+  - id: local_review
+    kind: loop
+    phase: Local review
+    when: steps.review.outputs.posted > 0
+    max: 3
+    until: steps.verify.outputs.clean == true
+    body:
+      - id: local_fix
+        kind: pipeline
+        use: pr-comments
+        phase: Local review
+        pushes: true
+      - id: verify
+        kind: pipeline
+        use: verify-review
+        phase: Local review
+  # 8. Request the Copilot review. A missing review is a warning and the run continues.
+  - id: copilot
+    kind: action
+    use: gh.copilot_review
+    phase: Copilot
+    when: settings.copilot.enabled == true
+    on_error: warn
+  # 9. Wait for the Copilot review on the head sha (20 minute timeout, then a warning).
+  - id: copilot_wait
+    kind: wait
+    use: copilot.review
+    phase: Copilot
+    when: settings.copilot.enabled == true
+    on_error: warn
+  # 10. Handle the Copilot threads, if any.
+  - id: copilot_fix
+    kind: pipeline
+    use: pr-comments
+    phase: Copilot
+    pushes: true
+    when: steps.copilot_wait.outputs.threads > 0
+  # 11. Test loop on DEV, repeated until the human verdict is OK.
+  - id: test_dev
+    kind: loop
+    phase: Test DEV
+    max: 5
+    until: steps.verdict.outputs.ok == true
+    body:
+      # Deploy to DEV after an explicit approval.
+      - id: deploy_approval
+        kind: human
+        phase: Test DEV
+        prompt: Deploy the branch to DEV?
+        choices: [approve, reject]
+      # Deploy workflow, watched until it concludes.
+      - id: deploy
+        kind: action
+        use: deploy.dev
+        phase: Test DEV
+      # The tester reports OK or KO; the report is written to flow/reports/.
+      - id: verdict
+        kind: human
+        phase: Test DEV
+        prompt: Dev test result?
+        choices: [ok, ko]
+      # On failure: the report becomes a Jira comment (a file in flow/reports/ for a local ticket).
+      - id: bug_report
+        kind: action
+        use: jira.comment
+        phase: Test DEV
+        when: steps.verdict.outputs.ok == false
+      # On failure: correction pipeline, then the ci block, then a new deploy approval.
+      - id: test_fix
+        kind: pipeline
+        use: correction-after-test-dev
+        phase: Test DEV
+        pushes: true
+        when: steps.verdict.outputs.ok == false
+        # The tester's KO report heads the prompt, before the ticket body.
+        with: { report_from: verdict }
+  # 12. Draft PR becomes ready; the local ticket moves to in-review.
+  - id: ready
+    kind: action
+    use: gh.pr_ready
+    phase: Peer review
+  # 13. Teams notification. A failure is a warning.
+  - id: notify
+    kind: action
+    use: notify.teams
+    phase: Peer review
+    when: settings.teams.enabled == true
+    on_error: warn
+  # 14. Jira Peer review. Skipped for a local ticket.
+  - id: jira_peer_review
+    kind: action
+    use: jira.transition
+    phase: Peer review
+    skip_on: [local]
+    with: { to: pr-ready }
+  # 15. Reviewer comments, one pr-comments run per batch, until the PR is approved.
+  - id: reviewers
+    kind: loop
+    phase: Peer review
+    max: 20
+    until: steps.wait_reviews.outputs.approved == true
+    body:
+      - id: wait_reviews
+        kind: wait
+        use: pr.reviews
+        phase: Peer review
+      - id: reviewer_fix
+        kind: pipeline
+        use: pr-comments
+        phase: Peer review
+        pushes: true
+        when: steps.wait_reviews.outputs.new_threads > 0
+  # 16. Jira In Validation. Skipped for a local ticket.
+  - id: jira_in_validation
+    kind: action
+    use: jira.transition
+    phase: Merge
+    skip_on: [local]
+    with: { to: merged }
+  # 17. Wait for the human merge click (the approve route); the daemon never merges alone.
+  - id: merge_approval
+    kind: human
+    phase: Merge
+    prompt: Merge the pull request?
+    choices: [approve]
+  # 18. Squash merge pinned on the head sha.
+  - id: merge
+    kind: action
+    use: gh.merge
+    phase: Merge
+  # 19. Remove the worktree after saving any work in progress. A failure is a warning.
+  - id: clean
+    kind: action
+    use: worktree.remove
+    phase: Cleanup
+    on_error: warn

@@ -1,0 +1,62 @@
+# Personal delivery: from a local ticket to a merged PR, for a GitHub repo with no CI, no Copilot
+# review and no Jira. No `ci` block, so nothing is inserted after a push. Three pipelines:
+# dev-unity (plan, implement, draft PR, playtest in the Unity Editor), review-unity (GitHub
+# review of the whole issue), fix-review-unity (fix the review comments, playtest again).
+# The human merges. Copy this file under another id to deliver another stack.
+id: perso-delivery
+version: 1
+inputs:
+  ticket: { required: true }
+steps:
+  # 1. Worktree from an up-to-date default branch, reused when it exists.
+  - id: worktree
+    kind: action
+    use: git.worktree
+    phase: Preparation
+  # 2. Branch feat/<KEY>, or fix/<KEY> for a Bug.
+  - id: branch
+    kind: action
+    use: git.branch
+    phase: Preparation
+  # 3. Dev pipeline on the ticket body: plan, code, EditMode tests, draft PR, playtest in the Editor.
+  - id: dev
+    kind: pipeline
+    use: dev-unity
+    phase: Development
+    pushes: true
+  # 3b. Unity review of the PR of the current branch: one GitHub review.
+  - id: review
+    kind: pipeline
+    use: review-unity
+    phase: Review
+    pushes: false
+  # 3c. Fix the review comments, playtest again. The next step marks the PR ready.
+  - id: fix_review
+    kind: pipeline
+    use: fix-review-unity
+    phase: Review
+    pushes: true
+    with:
+      mark_ready: false
+  # 4. Draft PR becomes ready; the local ticket moves to in-review.
+  - id: ready
+    kind: action
+    use: gh.pr_ready
+    phase: Merge
+  # 5. Wait for the human merge click; the daemon never merges alone.
+  - id: merge_approval
+    kind: human
+    phase: Merge
+    prompt: Merge the pull request?
+    choices: [approve]
+  # 6. Squash merge pinned on the head sha.
+  - id: merge
+    kind: action
+    use: gh.merge
+    phase: Merge
+  # 7. Remove the worktree after saving any work in progress. A failure is a warning.
+  - id: clean
+    kind: action
+    use: worktree.remove
+    phase: Cleanup
+    on_error: warn

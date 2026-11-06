@@ -1,0 +1,138 @@
+version: 5
+id: fix-review-unity
+description: >
+  Fix the open review comments of the PR of a Unity project — the ones of
+  unity-pr-reviewer as well as a human's: fix, compile, push, reply on each
+  thread and resolve the fixed ones, then test the PR again in the Unity
+  Editor, and mark the PR ready when nothing blocking is left. Nothing to
+  fix (no unresolved thread, no human comment after the last review): the
+  fix and playtest stages return at once (a stage `when:` on an upstream
+  output is decided at compile time, so they are always dispatched) and
+  `ready` does the rest. Third pipeline
+  of /run-unity-dev-pipeline, after dev-unity and review-unity.
+
+  Agents: unity-review-fixer, unity-playtester (Unity MCP + computer use), and
+  a generic executor for the bookkeeping. Never merges: the human merges.
+inputs:
+  issue: { required: false, kind: string, default: "", description: "GitHub issue number; the PR linked to it is fixed." }
+  pr: { required: false, kind: string, default: "", description: "PR number. Empty: the PR linked to `issue`, else the open PR of the current branch." }
+  feature: { required: false, kind: string, description: "Feature or ticket label; names the vault run folder." }
+  playtest: { required: false, kind: bool, default: true, description: "Test the PR again in the Unity Editor after the fixes." }
+  mark_ready: { required: false, kind: bool, default: true, description: "Mark the PR ready for review at the end when pr.markReadyWhenDone holds, the last verification passed and no blocking thread is left open." }
+settings:
+  knowledge_graph:
+    enabled: false
+stages:
+  - name: prepare
+    agent: executor
+    model: haiku
+    scope: { mode: stage_dir_only }
+    policy:
+      - "Never ask the user a question. Decide open points yourself and record them as assumptions."
+      - "Read only: no commit, no push, no branch switch, no GitHub write."
+    inputs:
+      issue: "{{ inputs.issue }}"
+      pr: "{{ inputs.pr }}"
+    with:
+      instructions: >
+        (1) The working directory must hold Assets/ and ProjectSettings/;
+        otherwise blocked. (2) `rtk gh repo view --json
+        nameWithOwner,defaultBranchRef`. (3) Read .claude/unity-workflow.json
+        and fill the defaults of
+        ~/.claude/skills/unity-issue-workflow/references/config.md (and
+        unity.closeEditorAfterPlaytest = false). (4) The PR: `pr` when
+        given; else the PR linked to `issue` (references/github.md); else the
+        open PR of the current branch. None found, closed or merged: blocked.
+        (5) The issue: `issue`, else the `Closes #<n>` of the PR body. (6)
+        `rtk git status --porcelain` not empty: blocked. (7) What is left to
+        fix (references/github.md, « Lire les fils non résolus »): the
+        unresolved review threads, the out-of-diff comments of the last
+        `unity-review-summary` review that no `unity-fix-summary` comment
+        answered yet, and the general PR comments of a human posted after
+        the last review. Count them; `has_open_threads` is true when the
+        count is above 0. (8) Fix round: 1 + the number of PR comments
+        containing `unity-fix-summary`. Write context.json with repo,
+        projectRoot, baseBranch, branch (the PR head), branch_exists (true
+        when the current branch is already the PR head), issue, pr,
+        fix_round, open_threads (count), has_open_threads, open_blocking
+        (unresolved threads whose marker says severity=bloquant) and config.
+    outputs: [context.json]
+
+  - name: fix
+    agent: unity-review-fixer
+    model: sonnet
+    needs: [prepare]
+    scope: { mode: repo_wide }
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      task: >
+        `context.has_open_threads` false: nothing to fix — write fix.json
+        with pushed false, commits [], threads [], fixed_refs [], touched [],
+        post nothing on GitHub, and reply completed with signals pushed
+        false, threads_fixed 0, threads_open 0, open_blocking 0. Otherwise:
+        fix the unresolved review threads of the PR `context.pr` (agent and
+        human comments, out-of-diff comments included), reply on each and
+        resolve the fixed ones, as your section « Lancé par aidp » says.
+        Verify as unity-verify.md says: when the Unity Editor is open, compile
+        through the Unity MCP (§2). The synthesis comment uses round
+        `context.fix_round`. fix.json also carries `fixed_refs` (the refs of
+        the threads you fixed) and `touched` (the behaviours your fixes
+        changed, one line each), for the playtest after you.
+    outputs: [fix.json]
+
+  - name: playtest
+    agent: unity-playtester
+    model: sonnet
+    needs: [fix]
+    scope: { mode: stage_dir_only }
+    when: "{{ inputs.playtest }}"
+    policy:
+      - "Never edit, commit or push a file of the repository; never switch branch. The only GitHub write allowed is `rtk gh pr comment`."
+      - "Never save a scene, prefab or asset; never create, modify or delete a scene object outside Play Mode."
+      - "Computer use: request access to the Unity Editor only; never click a link, never type outside the Unity window."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      focus: "{{ stages.fix.outputs.fix }}"
+      task: >
+        `focus.pushed` false (no fix was pushed): do not open the Editor —
+        write playtest.json {"passed": null, "fix_needed": false,
+        "skipped_reason": "aucun correctif poussé", "scenarios": []} and a
+        one-line playtest-report.md, post nothing, and reply completed with
+        signals fix_needed false, passed false, scenarios_total 0.
+        Otherwise: test the PR again in the Unity Editor after the review fixes, as your
+        section « Lancé par aidp » says. Replay first the behaviours of
+        `focus.touched` and the scenarios of the fixed threads, then every
+        CA-n of the issue. Comment marker round = 1 + the number of
+        `unity-playtest` comments already on the PR. A playtest failure is
+        not fixed here: report it; it goes into the PR comment and the
+        report so the next review / fix round picks it up.
+    outputs: [playtest.json, playtest-report.md]
+
+  - name: ready
+    agent: executor
+    model: haiku
+    needs: [fix, playtest]
+    scope: { mode: stage_dir_only }
+    policy:
+      - "Never merge. The only GitHub writes allowed are `rtk gh pr ready` and one `rtk gh pr comment` when the PR is left in draft."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      mark_ready: "{{ inputs.mark_ready }}"
+    with:
+      instructions: >
+        Section 3 of ~/.claude/skills/unity-issue-workflow/SKILL.md. Read
+        the fix.json of the `fix` stage and the playtest.json of the
+        `playtest` stage (ignore a playtest whose `passed` is null: it did not run). Run `rtk gh pr ready <pr> --repo
+        <repo>` only when `mark_ready` is true, config.pr.markReadyWhenDone
+        is true, the last compile is `ok` or `skipped`, no `bloquant` thread
+        is left open (fix.json's open_blocking, or context.open_blocking when
+        no fix ran), and the playtest, when it ran (passed not null), has `passed: true`.
+        Otherwise leave the PR in draft and post one PR comment saying why
+        and what is left. Write report.md: PR link, threads fixed / replied
+        / wontfix / blocked, commits, the verification that really ran, the
+        playtest result, threads still open, manual actions in the Editor,
+        and whether another review-unity round is advised (any fix or
+        playtest failure since the last review). Write state.json:
+        {"pr": <n>, "ready": <bool>, "threads_open": <n>,
+        "playtest_passed": <bool or null>, "another_round_advised": <bool>}.
+    outputs: [report.md, state.json]

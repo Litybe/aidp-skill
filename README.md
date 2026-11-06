@@ -37,7 +37,7 @@ Ce skill est réduit au développement de jeu Unity en solo.
 |---|---|
 | Outils | Unity (+ MCP Unity), Aseprite (MCP), Pixellab (MCP), GitHub (issues, PR) via `gh`, `aidp`, graphify (graphe de connaissance) |
 | Absents | Jira, Confluence, Sonar, GitHub Actions et toute CI, Teams, Mongo, SQS, Datadog, déploiements, Codex, Copilot |
-| Templates | `dev-unity`, `review-unity`, `fix-review-unity` (code Unity), `pixelart` (assets), `dev-aidp` (aidp lui-même), `dev-studio` (front `aidp-studio`), `knowledge-init` / `knowledge-read` / `knowledge-update` (base de connaissance), le fragment `review`, `dev-exemple` (démo) |
+| Templates | `dev-unity`, `review-unity`, `fix-review-unity` (code Unity, session Desktop), `unity-implement`, `unity-review`, `unity-fix`, `unity-test` (route `code` du flow `game-code`, runs autonomes du daemon), `pixelart` (assets), `dev-aidp` (aidp lui-même), `dev-studio` (front `aidp-studio`), `knowledge-init` / `knowledge-read` / `knowledge-update` (base de connaissance), le fragment `review`, `dev-exemple` (démo) |
 | Flow | `perso-delivery` (issue → PR mergée par toi) |
 | Disque | **rien sur C:**. Skill `D:\AIDP\skill`, binaire `D:\AIDP\bin`, sources `D:\AIDP\src`, vault `D:\AIDP\Vault`, état du daemon `D:\AIDP\gateway`, agents et commandes dans `<projet>\.claude\`. Seuls `~/.claude/settings.json` (hook Stop) et `~/.aidp/config.json` (vault, CI coupée) restent sur C:, parce que Claude Code et aidp ne les lisent que là. |
 | Installation | `setup-gamedev.ps1` (`/pipeline-setup-gamedev-v7`) : ne compile ni n'installe rien, voir l'en-tête du script |
@@ -127,6 +127,10 @@ fragilités d'origine : voir le plan de conception.)
 | `dev-unity` | implémente une issue GitHub dans le projet Unity, ouvre la PR en draft, playtest dans l'éditeur, boucle de correction |
 | `review-unity` | revue Unity de toute l'issue sur la PR (une review GitHub) |
 | `fix-review-unity` | corrige les commentaires de review, rejoue le playtest, passe la PR en ready |
+| `unity-implement` | route code : `prepare` → `plan` → `implement` (EditMode + compile gate C1) → `report`, PR draft `Closes #n` ; `track: bug` ajoute `repro` (test rouge d'abord). Sans playtest |
+| `unity-review` | revue « avocat du diable » critère par critère (`CA-n`, une preuve chacun), lecture seule, sans Unity ; verdict `done` / `need-fix` |
+| `unity-fix` | corrige les points ❌/⚠️ de la revue (`report_from: review`) ou les scénarios KO (`report_from: test`), compile gate C1, push, réponse sur chaque fil |
+| `unity-test` | compile gate C1, EditMode + PlayMode, un scénario PlaytestDriver par `CA-n`, preuves dans la PR, `passed` ; `needs-feel-check` → `blocked: feel-check` |
 | `pixelart` | brief, génération Pixellab, animation, revue notée, retouche, export Unity |
 | `dev-aidp` | fait évoluer `aidp` lui-même (workspace Rust, règles de son `AGENTS.md`) |
 | `dev-studio` | fait évoluer `aidp-studio`, le front du daemon (Vite, React, TypeScript strict) |

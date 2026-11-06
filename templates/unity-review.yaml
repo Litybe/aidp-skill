@@ -1,0 +1,151 @@
+version: 5
+id: unity-review
+description: >
+  Devil's advocate review of the PR of a GitHub issue in a Unity project. The
+  reviewer's job is to PROVE THE ISSUE IS NOT DONE: it assumes the PR is
+  incomplete until each acceptance criterion `CA-n` has its own proof (file
+  and line, test name, measured value). Then it reads the code against the
+  unity-csharp-dev rules and the Unity pitfalls. Read only and without Unity:
+  the Editor serves another issue meanwhile, so what only Play Mode can show
+  is left to `unity-test` (status 🧪, never a finding).
+  prepare → review → verdict.
+
+  Publishes ONE GitHub review on the PR (inline comments ranked by severity)
+  and writes the Markdown report. Never edits the code, never labels, never
+  merges.
+
+  Outputs read by the flows (C4): `verdict` ∈ done | need-fix and `findings`
+  (the findings.json of the review stage), via result.json of the verdict
+  stage; the Markdown report is verdict.md. The `game-code` loop `review ⇄
+  fix` runs `unity-fix` when the verdict is need-fix.
+
+  Agents: unity-pr-reviewer (read only), executor. Rules: unity-csharp-dev,
+  unity-shader-hlsl for shaders, references/github.md of unity-issue-workflow.
+inputs:
+  issue: { required: false, kind: string, default: "", description: "GitHub issue number; its linked PR is reviewed." }
+  pr: { required: false, kind: string, default: "", description: "PR number to review. Empty: the PR linked to `issue`, else the open PR of the current branch." }
+  feature: { required: false, kind: string, description: "Feature or ticket label; names the vault run folder." }
+settings:
+  knowledge_graph:
+    enabled: false
+stages:
+  - name: prepare
+    agent: executor
+    model: haiku
+    scope: { mode: stage_dir_only }
+    policy:
+      - "Never ask the user a question. Decide open points yourself and record them as assumptions."
+      - "Read only: no commit, no push, no branch switch, no GitHub write. Do not open or compile Unity."
+    inputs:
+      issue: "{{ inputs.issue }}"
+      pr: "{{ inputs.pr }}"
+    with:
+      instructions: >
+        (1) The working directory must hold Assets/ and ProjectSettings/;
+        otherwise blocked. (2) `rtk gh repo view --json
+        nameWithOwner,defaultBranchRef`. (3) Read .claude/unity-workflow.json
+        and fill the defaults of
+        ~/.claude/skills/unity-issue-workflow/references/config.md. (4) The
+        PR: `pr` when given; else the PR linked to `issue`
+        (references/github.md, « PR déjà liée à une issue »); else the open
+        PR of the current branch (`rtk gh pr view --json number`). None
+        found, or the PR is closed or merged: blocked. (5) The issue: `issue`
+        when given, else the `Closes #<n>` of the PR body (may be null). (6)
+        Review round: 1 + the number of PR reviews whose body contains
+        `unity-review-summary` (`rtk gh api
+        repos/<repo>/pulls/<pr>/reviews --paginate --jq '.[].body'`); the
+        comment id prefix is `R<round>-`. (7) The criteria: list every
+        `CA-n` of the issue body (or the criteria its text implies) with its
+        text, and mark the ones tagged `needs-feel-check`. (8) Earlier
+        evidence on the PR: the `unity-test` comments (`<!-- unity-test`
+        marker; last round, passed or not) and the `unity-fix-summary`
+        comments. Write context.json with repo, projectRoot, baseBranch,
+        branch (the PR head), branch_exists: true, issue, pr, head_sha,
+        review_round, id_prefix, criteria [{id, text, feel_check}], test
+        {rounds, last_passed, last_url} and config.
+    outputs: [context.json]
+
+  - name: review
+    agent: unity-pr-reviewer
+    model: opus
+    skills: [unity-csharp-dev]
+    needs: [prepare]
+    scope: { mode: stage_dir_only }
+    policy:
+      - "Never edit, commit or push a file of the repository; never switch branch; no git command that changes the checkout (another stage may use it): read the PR at its head sha through `rtk gh pr diff` and `rtk gh api repos/<repo>/contents/<path>?ref=<head_sha>`, saved in your scratch space."
+      - "Do not use Unity: no MCP Unity tool, no batchmode, no computer use. A behaviour only Play Mode can show is 🧪 and goes to `unity-test`."
+      - "The only GitHub write allowed is ONE review (`rtk gh api repos/<repo>/pulls/<pr>/reviews --method POST`), event COMMENT."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      task: >
+        Review the PR `context.pr` as the devil's advocate and publish ONE
+        GitHub review, comment ids prefixed `context.id_prefix`, round
+        `context.review_round`, as your section « Lancé par aidp » says. Your
+        job is to prove that the issue is NOT done: treat the PR as
+        incomplete until each criterion has its proof. (A) Per criterion —
+        for every item of `context.criteria` (CA-n), every T-n scenario,
+        every « Actions dans l'éditeur » item and every « Hors périmètre »
+        point of the issue, one row with its status (✅ proved / ❌ missing
+        or wrong / ⚠️ partial / 🧪 only Play Mode can show it) and ONE proof
+        specific to it: `file:line` of the code that does it, the name of
+        the EditMode test that checks it, or a value you measured or
+        recomputed. A claim of the PR body without such a proof is not a
+        proof. Look for what the PR asserts without proving, edge cases that
+        break at run time, missing or unneeded files, a missing .meta, and
+        the PlaytestDriver probes or commands the criterion would need to be
+        testable (probe and scenario contract: templates/recipes/unity-verify.md
+        §3 of the skill, to read only: you run nothing). A criterion with no code is ❌ and a `bloquant` comment. A
+        T-n with no matching test is `majeur`. A manual action the PR needs
+        but does not list is `majeur`. A 🧪 row is not a comment, it lists
+        what `unity-test` must play. (B) The code — full files read at the
+        head sha, correctness, Unity lifecycle, the unity-csharp-dev
+        review-checklist on the changed lines (layers, VContainer, no magic
+        values, LINQ and allocations in Update, ScriptableObject config),
+        Unity pitfalls (.meta, FormerlySerializedAs, hand-edited
+        .unity/.prefab/.asset, unregistered injected type, generated files),
+        shaders with unity-shader-hlsl, and the tests (they assert
+        behaviour, not the implementation). (C) Publish. Changes needed (at
+        least one comment of a severity of config.review.fixSeverities, or
+        any ❌ / ⚠️): inline comments in the references/github.md format,
+        the review body holding the severity table, the criteria table and a
+        « ### À corriger » list (one actionable line per ❌ / ⚠️), and the
+        marker `unity-review-summary` (round, verdict). Nothing to change:
+        the review body is the full verification report — the criteria table
+        with every proof, the files read, the checks done, the 🧪 list for
+        `unity-test` — opened with « ✅ Rien à corriger ». (D) Verdict:
+        `need-fix` as soon as one criterion is ❌ or ⚠️ or one comment has a
+        fixSeverity; `done` otherwise (🧪 rows do not prevent `done`). Write
+        review.json: {"pr", "round", "review_url", "verdict":
+        "done|need-fix", "fix_needed" (boolean, true for need-fix),
+        "has_blocking_findings", "criteria": [{id, status, proof}], "to_test":
+        [ids of the 🧪 rows]} and findings.json (the comments, as the
+        findings schema of the skill and references/github.md define them,
+        severity-ranked). Mirror verdict, fix_needed and
+        has_blocking_findings as signals.
+    outputs: [review.json, findings.json]
+
+  - name: verdict
+    agent: executor
+    model: haiku
+    needs: [review]
+    scope: { mode: stage_dir_only }
+    policy:
+      - "No GitHub write, no commit, no push."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      review: "{{ stages.review.outputs.review }}"
+      findings: "{{ stages.review.outputs.findings }}"
+    with:
+      instructions: >
+        Write result.json, the file the flows read: {"verdict":
+        "done|need-fix" (copied from review.json, never recomputed), "pr":
+        <n>, "round": <n>, "review_url": "<url>", "findings": <the array
+        of findings.json, or its path when it has more than 50 entries>,
+        "blocking": <n>, "comments": <n>, "criteria_total": <n>,
+        "criteria_done": <n>, "to_test": [ids], "next": "unity-fix" when
+        need-fix else "unity-test"}. Write verdict.md, the Markdown report:
+        the title « Revue avocat du diable — verdict : done | need-fix », the
+        review link, the criteria table (criterion / status / proof), the
+        comments by severity, the 🧪 list, and the next step. Mirror verdict
+        as signals.verdict.
+    outputs: [result.json, verdict.md]

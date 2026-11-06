@@ -26,7 +26,8 @@ This copy of the skill serves solo Unity game development. Tools: Unity (and its
 Pixellab (MCP), GitHub issues and PRs through `gh`, `aidp`, and graphify for the knowledge graph. No
 Jira, Confluence, Sonar, CI, Teams, Mongo, SQS, Datadog, deployment, Codex or Copilot.
 
-- Templates: `dev-unity`, `review-unity`, `fix-review-unity`, `pixelart`, `dev-aidp` (aidp itself),
+- Templates: `dev-unity`, `review-unity`, `fix-review-unity`, the `game-code` pipelines `unity-implement`,
+  `unity-review`, `unity-fix`, `unity-test` (shared recipe `templates/recipes/unity-verify.md`), `pixelart`, `dev-aidp` (aidp itself),
   `dev-studio` (the `aidp-studio` front), `knowledge-init`, the fragments `knowledge-read`,
   `knowledge-update` and `review`, and the demo `dev-exemple`. Flow: `perso-delivery`.
 - Disk: nothing is installed on C:. Skill `D:\AIDP\skill` (`AIDP_SKILL_ROOT`), binary `D:\AIDP\bin`,
@@ -616,7 +617,8 @@ A native run carries an immutable `autonomous` flag. In an autonomous run every 
 - `templates/` — v7 pipelines (`version: 5`). Stages may add `isolation: worktree`, `fan_out:` (shard
   labels) or `plan_tasks:` (compiled from the planner's `plan.json`). Extend via `/pipeline-new-v7`.
   `dev-aidp` and `dev-studio` are **plan-driven**. `templates/flows/` holds the flow definitions
-  (`perso-delivery`); `templates/recipes/` the autonomous-session recipes the daemon reads.
+  (`perso-delivery`); `templates/recipes/` the autonomous-session recipes the daemon reads and the shared
+  `unity-verify.md` (compile gate C1, EditMode/PlayMode, PlaytestDriver scenarios C2) that the four `unity-*` pipelines point their agents at.
 - `agents/` — the 4 generic sub-agents (analyzer / planner / executor / reviewer). Extend via
   `/agent-new-v7`.
 - `commands/` — the full v7 command set (`run-pipeline-v7`, `run-unity-dev-pipeline`,

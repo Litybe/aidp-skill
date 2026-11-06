@@ -2,17 +2,17 @@ version: 5
 id: review
 kind: fragment
 description: >
-  Multi-dimension code review shared across dev-* pipelines: run the 4 rubric
-  dimensions (correctness ‖ security ‖ perf ‖ maintainability) in parallel over
-  the current diff, then synthesize into the canonical findings.json (with
-  has_blocking_findings) + summary.md. Extracted from dev-csharp so other
-  dev-* templates can compose it via `type: pipeline` instead of re-declaring
-  these 5 stages. No `explore`/`report` stages here (unlike `audit.yaml`,
-  which is its own standalone, path-driven audit pipeline) — this one reviews
-  whatever the composing pipeline's `code`/`tests` stages just produced.
+  Multi-dimension code review shared across dev-* pipelines (dev-aidp,
+  dev-studio): run the 4 rubric dimensions (correctness ‖ security ‖ perf ‖
+  maintainability) in parallel over the current diff, then synthesize into the
+  canonical findings.json (with has_blocking_findings) + summary.md. Composed
+  via `type: pipeline` so each dev-* template does not re-declare these 5
+  stages. It reviews whatever the composing pipeline's implement stage just
+  produced. The rubric is the reviewer agent's own procedure
+  (agents/reviewer.md); the `graphify` skill answers callers, tests and blast
+  radius from the knowledge graph when the repo has one.
 # Optional rule from the composing pipeline on how to evaluate the tests check when this
-# review cannot run the tests itself (pr-review reads the PR's CI instead). Empty: the
-# reviewer's default rule applies.
+# review cannot run the tests itself. Empty: the reviewer's default rule applies.
 inputs:
   tests_evidence: { required: false, kind: string, default: "" }
 settings:
@@ -28,7 +28,7 @@ stages:
   # adjacency still lets the v7 engine group them into one parallel() block.
   - name: review_correctness
     agent: reviewer
-    skills: [graphify-context, code-review-aidp, code-audit-rubric]
+    skills: [graphify]
     inputs:
       axis: correctness
       tests_evidence: "{{ inputs.tests_evidence }}"
@@ -59,7 +59,7 @@ stages:
 
   - name: review_security
     agent: reviewer
-    skills: [graphify-context, code-review-aidp, code-audit-rubric]
+    skills: [graphify]
     inputs:
       axis: security
       tests_evidence: "{{ inputs.tests_evidence }}"
@@ -68,7 +68,7 @@ stages:
 
   - name: review_perf
     agent: reviewer
-    skills: [graphify-context, code-review-aidp, code-audit-rubric]
+    skills: [graphify]
     inputs:
       axis: performance
       tests_evidence: "{{ inputs.tests_evidence }}"
@@ -77,7 +77,7 @@ stages:
 
   - name: review_maintainability
     agent: reviewer
-    skills: [graphify-context, code-review-aidp, code-audit-rubric]
+    skills: [graphify]
     inputs:
       axis: maintainability
       tests_evidence: "{{ inputs.tests_evidence }}"
@@ -94,14 +94,15 @@ stages:
   # `on_harness_gap: pause` is set ONLY here, the run's one synthesis point.
   - name: review
     agent: reviewer
-    skills: [graphify-context, code-review-aidp, code-audit-rubric]
+    skills: [graphify]
     needs: [review_correctness, review_security, review_perf, review_maintainability]
     inputs:
       axis: synthesis
       tests_evidence: "{{ inputs.tests_evidence }}"
       skill_rules_step: >
         Before merging, from the repo root run
-        `rtk aidp skill-rules check --base master --out <your stage_dir>/skill-rules.json`.
+        `rtk aidp skill-rules check --base <default branch> --out <your stage_dir>/skill-rules.json`,
+        where <default branch> is `main` when the repo has one, else `master`.
         Then pass that file to `rtk aidp findings merge` as
         `--label skill_rules=<your stage_dir>/skill-rules.json` alongside the four axes,
         and list every skill-rules finding (file:line) in summary.md. If the command

@@ -1,21 +1,21 @@
 version: 5
 id: knowledge-init
 description: >
-  Bootstrap the project knowledge base of a service from scratch: sweep the
-  codebase along six independent axes (structure, events, data, domain,
-  operations, business features), write the canonical note set into
-  <vault>/Knowledge/<repo>/ — transverse notes at the root plus one note per
-  business feature under Features/ — then verify every claim against the code
-  and correct what does not hold.
-  Run this ONCE per service, before any other pipeline — from then on
-  `knowledge-read` / `knowledge-update` (wired into dev-*, study, tech-doc,
-  func-doc) keep the base current run after run. Re-running it on an
-  already-documented service is safe: it reads the existing notes first and
+  Bootstrap the knowledge base of a project (a Unity game, aidp itself, its
+  front) from scratch: sweep the codebase along six independent axes
+  (structure, events, data, domain, operations, features), write the
+  canonical note set into <vault>/Knowledge/<repo>/ — transverse notes at the
+  root plus one note per feature under Features/ — then verify every claim
+  against the code and correct what does not hold.
+  Run this ONCE per project, before any other pipeline — from then on
+  `knowledge-read` / `knowledge-update` (wired into dev-aidp and dev-studio)
+  keep the base current run after run. Re-running it on an
+  already-documented project is safe: it reads the existing notes first and
   updates them in place rather than starting over.
 inputs:
-  # Root of the service to document. `.` for the whole repo, or a subfolder for
+  # Root of the project to document. `.` for the whole repo, or a subfolder for
   # a monorepo. Everything the scans read is relative to it.
-  service_path: { required: true, kind: string, default: ".", description: "Root of the service to document — \".\" for the whole repo, or a subfolder path for a monorepo. Every scan reads relative to it." }
+  service_path: { required: true, kind: string, default: ".", description: "Root of the project to document — \".\" for the whole repo, or a subfolder path for a monorepo. Every scan reads relative to it." }
   # Grouping folder for the run's own artefacts (the scans). Not the knowledge
   # base itself, which is always <vault>/Knowledge/<repo>/. Defaulted because
   # this pipeline has no ticket — without it every init would land in the shared
@@ -45,56 +45,59 @@ stages:
   # produce overlapping notes, which is what makes a knowledge base rot.
   - name: scan_structure
     agent: analyzer
-    skills: [graphify-context]
+    skills: [graphify]
     needs: [knowledge]
     inputs:
       path: "{{ inputs.service_path }}"
       knowledge_context: "{{ stages.knowledge.outputs.knowledge_context }}"
       task: >
-        Map the shape of the service and write structure.md: what it is for in
-        one paragraph, the stack and runtime (framework, language version,
-        hosting — Lambda/serverless.yml, container/Dockerfile, k8s), the entry
-        points (HTTP routes, queue/topic consumers, schedules, CLI), the module
-        layout with the real folder paths, how it is built, tested and deployed
-        (Makefile targets, CI workflows), and its external dependencies with the
+        Map the shape of the project and write structure.md: what it is for in
+        one paragraph, the stack and runtime (engine or framework and its
+        version, language version, packages — Unity Packages/manifest.json, a
+        Cargo workspace, package.json), the entry points (scenes in the build,
+        bootstrap MonoBehaviours or LifetimeScopes, CLI commands, HTTP routes),
+        the module layout with the real folder paths (assemblies and asmdef
+        files included), how it is built and tested (Unity batchmode and test
+        runner, cargo, npm scripts), and its external dependencies with the
         purpose of each. Give paths an agent can grep. No history, no roadmap.
     outputs: [structure.md]
 
   - name: scan_events
     agent: analyzer
-    skills: [graphify-context, event-architecture]
+    skills: [graphify]
     needs: [knowledge]
     inputs:
       path: "{{ inputs.service_path }}"
       task: >
-        Map the event surface and write events.md plus events.json. INCOMING:
-        every handler — event/message name, transport (SNS/SQS/EventBridge/
-        Kafka/HTTP), the payload fields actually read, the handler file, and what
-        it does. OUTGOING: every publish — name, transport, payload, the
-        publisher file, and the business fact it announces. Note the version of
-        each contract, the retry/DLQ behaviour, and any idempotency key. If the
-        service publishes nothing, say so explicitly — silence reads as "not
-        investigated".
+        Map the event surface and write events.md plus events.json: every
+        event or message the code raises or listens to — C# events and
+        delegates, UnityEvents, ScriptableObject event channels, Input System
+        actions, animation events, a message bus, HTTP or SSE events. For each:
+        its name, its mechanism, the payload actually read, the file that
+        raises it, the files that handle it, and the fact it announces. Note
+        the ordering and lifetime constraints (subscribe and unsubscribe
+        points, frame timing). If the project raises nothing, say so
+        explicitly — silence reads as "not investigated".
     outputs: [events.md, events.json]
 
   - name: scan_data
     agent: analyzer
-    skills: [graphify-context]
+    skills: [graphify]
     needs: [knowledge]
     inputs:
       path: "{{ inputs.service_path }}"
       task: >
-        Map persistence and write data.md: every store the service owns or reads
-        (Mongo collections, DynamoDB tables and their key schema and GSIs, SQL
-        tables, S3 prefixes, caches), the shape of what is stored, the access
-        patterns in the code, TTL/retention, migrations, and which fields are
-        personal data (GDPR-relevant). Distinguish stores the service OWNS from
-        stores it merely reads — the difference decides who may change them.
+        Map data and persistence and write data.md: every store the project
+        owns or reads (save files, PlayerPrefs, ScriptableObject assets, level
+        data such as LDtk files, config files, on-disk state, caches), the shape
+        of what is stored, the access patterns in the code, versioning and
+        migrations. Distinguish data the project OWNS from data it merely reads
+        or imports — the difference decides who may change it.
     outputs: [data.md]
 
   - name: scan_domain
     agent: analyzer
-    skills: [graphify-context]
+    skills: [graphify]
     needs: [knowledge]
     inputs:
       path: "{{ inputs.service_path }}"
@@ -112,46 +115,45 @@ stages:
 
   - name: scan_ops
     agent: analyzer
-    skills: [graphify-context, enforcing-decision-records]
+    skills: [graphify]
     needs: [knowledge]
     inputs:
       path: "{{ inputs.service_path }}"
       task: >
-        Map running the thing and write operations.md: configuration and
-        environment variables (what each does, which are secrets), the
-        environments and how they differ, observability (log format, metrics,
-        dashboards, alerts, correlation-id propagation), failure modes and what
-        they look like in production, timeouts/retries/circuit breakers, IAM or
-        auth requirements, and the local development entry point (how a
-        developer runs and debugs this service on their machine).
+        Map running the thing and write operations.md: configuration (project
+        settings, build settings, input bindings, config files, environment
+        variables — what each does, which are secrets), the build targets and
+        how they differ, logging and diagnostics, failure modes and what they
+        look like at runtime, and the local development entry point (how a
+        developer opens, runs, tests and debugs this project on their machine).
     outputs: [operations.md]
 
   # --- The sixth axis, and the one that gives agents per-feature granularity:
-  # carve the service into the BUSINESS features it implements. This stage only
+  # carve the project into the features it implements. This stage only
   # inventories them — `write_features` writes one note each, fanned out on the
   # `signals.features` array this stage emits.
   - name: scan_features
     agent: analyzer
     model: opus   # delibere : identification des features metier a partir du code - sonnet manque de jugement ici
-    skills: [graphify-context]
+    skills: [graphify]
     needs: [knowledge]
     inputs:
       path: "{{ inputs.service_path }}"
       knowledge_context: "{{ stages.knowledge.outputs.knowledge_context }}"
       task: >
-        Inventory the BUSINESS features this service implements and write
-        features.md plus features.json. A feature is a capability a product
-        person would name and a user or another service would notice — "temporary
-        self-exclusion", "deposit limits", "payment fraud scoring" — not a
-        technical layer ("repositories", "the SNS publisher") and not a single
-        function. Derive them from the entry points, the use cases / commands,
-        the events published, the feature flags and the domain vocabulary, then
-        MERGE what is really one capability seen from two angles.
-        For each feature give: a slug (kebab-case), the business name, the other
-        names it goes by in code, tickets or docs (aliases), the domain/bounded
-        context it belongs to, its entry points, the events it consumes and
-        publishes, the stores it touches, and the files that carry it.
-        Aim for 5 to 20 features: fewer means you stayed at the service level,
+        Inventory the features this project implements and write features.md
+        plus features.json. A feature is a capability a designer would name and
+        a player or a user would notice — "wall jump", "dash", "save and load",
+        "room transitions" — not a technical layer ("repositories", "the input
+        wrapper") and not a single function. Derive them from the entry points,
+        the use cases / commands, the events raised, the feature flags and the
+        domain vocabulary, then MERGE what is really one capability seen from
+        two angles.
+        For each feature give: a slug (kebab-case), its name, the other names it
+        goes by in code, issues or docs (aliases), the domain it belongs to, its
+        entry points, the events it raises and handles, the data it touches,
+        and the files that carry it.
+        Aim for 5 to 20 features: fewer means you stayed at the project level,
         more means you sliced technical units instead of capabilities. Say in
         features.md which parts of the code you could NOT attribute to any
         feature — that gap is more useful than a made-up feature.
@@ -169,7 +171,6 @@ stages:
   - name: write_knowledge
     agent: executor
     model: opus   # delibere : premiere ecriture de la base de connaissance que tout run futur va faire confiance
-    skills: [writing-clearly-and-concisely]
     knowledge: service
     scope: { mode: stage_dir_only }
     needs: [scan_structure, scan_events, scan_data, scan_domain, scan_ops]
@@ -182,9 +183,9 @@ stages:
       operations: "{{ stages.scan_ops.outputs.operations }}"
       task: >
         Merge the five transverse scans into the canonical note set of this
-        service. Write `_index`-free, self-contained notes: overview.md (what the
-        service is, its responsibilities, its place among the other services, and
-        a reading order for the rest), architecture.md, events.md + events.json,
+        project. Write `_index`-free, self-contained notes: overview.md (what the
+        project is, its responsibilities, its main systems, and a reading order
+        for the rest), architecture.md, events.md + events.json,
         data.md, domain.md, operations.md. Cut the redundancy the scans inevitably
         produced — one fact lives in exactly one note, the others link to it.
         Drop anything you could not tie to the code. Where the scans disagree,
@@ -192,7 +193,7 @@ stages:
         short "Open questions" section at the end of the note rather than
         guessing. Leave feature-specific rules out: they go into the per-feature
         notes, and overview.md should point the reader at `Features/` for them.
-        Write for an AI agent starting cold on this service.
+        Write for an AI agent starting cold on this project.
     outputs: [overview.md, architecture.md, events.md, events.json, data.md, domain.md, operations.md]
 
   # --- Step 3: the feature layer. `knowledge: feature` puts stage_dir at
@@ -204,7 +205,7 @@ stages:
   - name: write_features
     agent: executor
     model: opus   # delibere : notes features qui font autorite pour les runs futurs - la qualite prime
-    skills: [graphify-context, writing-clearly-and-concisely]
+    skills: [graphify]
     knowledge: feature
     scope: { mode: stage_dir_only }
     needs: [write_knowledge, scan_features]
@@ -239,7 +240,7 @@ stages:
   - name: verify
     agent: reviewer
     model: opus   # delibere : verifie les CLAIMS de la base de connaissance contre le code - gate de confiance
-    skills: [graphify-context, code-review-aidp]
+    skills: [graphify]
     needs: [write_knowledge, write_features]
     inputs:
       base: "{{ stages.write_knowledge.outputs.overview }}"
@@ -261,7 +262,6 @@ stages:
   # finding can land on either one and this stage edits the notes in place.
   - name: correct
     agent: executor
-    skills: [writing-clearly-and-concisely]
     knowledge: true
     scope: { mode: stage_dir_only }
     needs: [verify]

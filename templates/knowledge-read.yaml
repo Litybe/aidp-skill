@@ -3,10 +3,10 @@ id: knowledge-read
 kind: fragment
 description: >
   Reusable first step of any discovery: read the project knowledge base
-  (<vault>/Knowledge/<repo>/ — the durable documentation of the service, built
+  (<vault>/Knowledge/<repo>/ — the durable documentation of the project, built
   by previous runs) and distil the part that matters for the current work into
   knowledge_context.md. Compose it with `type: pipeline` / `uses:
-  knowledge-read` ahead of the code/Jira/Confluence reads, so the run starts
+  knowledge-read` ahead of the code reads, so the run starts
   from what is already known instead of rediscovering it from the source.
   Pairs with `knowledge-update`, which folds the run's findings back in.
 
@@ -16,7 +16,7 @@ description: >
   edge cases). The feature note is the higher-value read: it is the closest
   thing the base holds to a spec for the work about to start.
 inputs:
-  # What the current run is about — the ticket list, a topic, a service path.
+  # What the current run is about — an issue, a topic, a project path.
   # Used only to decide what is RELEVANT; the whole base is available.
   focus: { required: false, kind: string }
 stages:
@@ -28,7 +28,7 @@ stages:
   # working context.
   - name: knowledge_read
     agent: analyzer
-    skills: [graphify-context]
+    skills: [graphify]
     model: haiku
     inputs:
       focus: "{{ inputs.focus }}"

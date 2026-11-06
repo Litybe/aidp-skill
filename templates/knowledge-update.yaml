@@ -3,7 +3,7 @@ id: knowledge-update
 kind: fragment
 description: >
   Reusable last step of any discovery: fold everything the run just learned
-  about the service back into the project knowledge base
+  about the project back into the project knowledge base
   (<vault>/Knowledge/<repo>/), updating the existing notes in place. This is
   what makes each run leave the next one better informed — the base is the
   context every future pipeline (and every AI agent working on this repo)
@@ -34,7 +34,6 @@ stages:
   - name: knowledge_update
     agent: executor
     model: haiku
-    skills: [writing-clearly-and-concisely]
     knowledge: service
     scope: { mode: stage_dir_only }
     inputs:
@@ -67,7 +66,7 @@ stages:
   - name: knowledge_feature_update
     agent: executor
     model: haiku
-    skills: [graphify-context, writing-clearly-and-concisely]
+    skills: [graphify]
     knowledge: feature
     scope: { mode: stage_dir_only }
     needs: [knowledge_update]
@@ -82,8 +81,8 @@ stages:
         note instead of re-reading that code, so every rule, threshold, event
         name and file path in it must be one you verified. On an `update`,
         re-read the existing note first and correct what the run proved wrong
-        rather than appending; keep its `slug` and add this run's Jira keys to
-        `tickets:`. On a `create`, use exactly the path you were given and fill
+        rather than appending; keep its `slug` and add this run's ticket keys
+        (GitHub issue numbers) to `tickets:`. On a `create`, use exactly the path you were given and fill
         `aliases:` with the other names this feature goes by — that field is what
         stops the next run creating a duplicate. If the run touched more than one
         business feature, run `rtk aidp knowledge resolve --name "<name>"` for each

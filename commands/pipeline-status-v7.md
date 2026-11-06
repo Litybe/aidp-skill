@@ -3,7 +3,7 @@ description: List ai-dev-pipeline-v7 runs in the current workspace. Usage — /p
 argument-hint: ""
 ---
 
-Set `AIDP_SKILL_ROOT` to `~/.claude/skills/ai-dev-pipeline-v7`, then run `rtk aidp status --format json-pretty`
+Use `AIDP_SKILL_ROOT` from the user environment (`D:\AIDP\skill` in the gamedev profile), then run `rtk aidp status --format json-pretty`
 and render a friendly table.
 
 Procedure:
@@ -22,7 +22,7 @@ Procedure:
 
 | Run | Pipeline | Target | Status | Stage | Progress | Started |
 |---|---|---|---|---|---|---|
-| `20260524-...` | dev | SQIPI-1234 | in_progress | code | 3/7 | 2026-05-24 14:30 |
+| `20260524-...` | dev-unity | 42 | in_progress | code | 3/7 | 2026-05-24 14:30 |
 
 5. After the table, mention `/pipeline-resume-v7 <run_id>` for paused/awaiting-gate runs, and give
    the vault path so the user can open the runs as notes in Obsidian.

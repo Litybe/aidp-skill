@@ -5,7 +5,7 @@ argument-hint: "[name]"
 
 Create a new sub-agent for **ai-dev-pipeline-v7**. Generates `agents/<name>.md` with the right frontmatter.
 
-Set `AIDP_SKILL_ROOT` to `~/.claude/skills/ai-dev-pipeline-v7` for every `aidp` call.
+Use `AIDP_SKILL_ROOT` from the user environment for every `aidp` call (`D:\AIDP\skill` in the gamedev profile, set by `setup-gamedev.ps1`; set it to that folder when it is unset).
 
 Arguments:
 - `$1` = agent name (kebab-case or snake_case). If omitted, ask via `AskUserQuestion`.

@@ -3,7 +3,7 @@ name: planner
 role: research
 default_scope: stage_dir_only
 output_envelope: agent-reply.v4
-description: Generic planning agent. Turns analysis + requirements into an executable task graph (plan.json) or a structured decomposition (epic→stories). Specialized via skills (dotnet-engineering, aws-serverless, ticket-decomposition, enforcing-decision-records, ...).
+description: Generic planning agent. Turns analysis + requirements into an executable task graph (plan.json) or a structured decomposition (epic→stories). Specialized via skills (unity-csharp-dev, unity-shader-hlsl, github-issue-ticket, ...).
 ---
 
 # planner
@@ -94,5 +94,4 @@ task's prompt plus the stage's artifact paths — never your other tasks, never 
 - Write `plan.json` as prose, or as anything other than the declared schema — it is parsed, and a
   malformed plan fails the run's compilation.
 - Encode ordering you do not need, or omit a file a task will write.
-- Skip ADR check when `enforcing-decision-records` is in `skills`.
 - Modify any file outside `stage_dir`.

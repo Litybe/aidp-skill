@@ -14,8 +14,8 @@ driver: the five pixel agents (`pixel-art-director`, `pixel-artist`, `pixel-anim
   `AskUserQuestion` for it. Never guess.
 
 ## 1. Preconditions
-1. Set `AIDP_SKILL_ROOT=~/.claude/skills/ai-dev-pipeline-v7` for every `aidp` call (bash prefix, or
-   `$env:AIDP_SKILL_ROOT` in PowerShell).
+1. Use `AIDP_SKILL_ROOT` from the user environment for every `aidp` call (`D:\AIDP\skill` in the
+   gamedev profile; bash prefix, or `$env:AIDP_SKILL_ROOT` in PowerShell, when it is unset).
 2. The current directory must be the game project (a Unity project holds `Assets/` and
    `ProjectSettings/`). Otherwise stop and say so: the sprites are written into this project.
 3. `rtk aidp vault status --format json-compact` once: warn if no vault is configured, then go on.

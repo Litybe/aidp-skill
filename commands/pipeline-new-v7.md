@@ -7,7 +7,7 @@ Create a new **v7** pipeline template by walking the user through the schema, th
 validate it. The user picks the destination: either the **skill templates** (shared across projects) or
 `.aidp/pipeline/flow/` in the **current repo** (project-local).
 
-Set `AIDP_SKILL_ROOT` to `~/.claude/skills/ai-dev-pipeline-v7` for every `aidp` call.
+Use `AIDP_SKILL_ROOT` from the user environment for every `aidp` call (`D:\AIDP\skill` in the gamedev profile, set by `setup-gamedev.ps1`; set it to that folder when it is unset).
 
 Arguments:
 - `$1` = pipeline id (kebab-case). If omitted, ask via `AskUserQuestion`.
@@ -27,7 +27,7 @@ Ask the user via `AskUserQuestion`:
 Ask via `AskUserQuestion`:
 
 Question: "Où créer la pipeline?"
-- **Partagée (skill templates)** — écrit dans `<skill_root>/templates/<id>.yaml`. Visible depuis n'importe quel repo qui utilise ce skill. Bon choix pour les pipelines réutilisables (dev, study, audit, ...).
+- **Partagée (skill templates)** — écrit dans `<skill_root>/templates/<id>.yaml`. Visible depuis n'importe quel repo qui utilise ce skill. Bon choix pour les pipelines réutilisables (dev-unity, pixelart, ...).
 - **Locale à ce repo (`.aidp/pipeline/flow/`)** — écrit dans `<cwd>/.aidp/pipeline/flow/<id>.yaml`. Visible **uniquement** quand `/run-pipeline-v7 <id>` est lancé depuis `<cwd>` (ou un sous-dossier). Bon choix pour une pipeline propre à un service.
 
 Note pour Claude:

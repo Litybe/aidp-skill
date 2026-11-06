@@ -14,8 +14,8 @@ driver: all real work happens inside the Workflow sub-agents.
   `AskUserQuestion` for it. Never guess.
 
 ## Before the first run
-1. Set `AIDP_SKILL_ROOT=~/.claude/skills/ai-dev-pipeline-v7` for every `aidp` call (bash prefix, or
-   `$env:AIDP_SKILL_ROOT` in PowerShell).
+1. Use `AIDP_SKILL_ROOT` from the user environment for every `aidp` call (`D:\AIDP\skill` in the
+   gamedev profile; bash prefix, or `$env:AIDP_SKILL_ROOT` in PowerShell, when it is unset).
 2. The current directory must be the Unity project (it holds `Assets/` and `ProjectSettings/`).
    Otherwise stop and say so.
 3. `rtk aidp vault status --format json-compact` once: warn if no vault is configured, then go on.

@@ -3,7 +3,7 @@ description: Validate a v7 pipeline YAML against the pipeline schema. Accepts a 
 argument-hint: "[template_id_or_path]"
 ---
 
-Set `AIDP_SKILL_ROOT` to `~/.claude/skills/ai-dev-pipeline-v7`, then run `rtk aidp validate <id|path>` and explain
+Use `AIDP_SKILL_ROOT` from the user environment (`D:\AIDP\skill` in the gamedev profile), then run `rtk aidp validate <id|path>` and explain
 the result.
 
 Arguments:

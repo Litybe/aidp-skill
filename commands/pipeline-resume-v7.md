@@ -6,7 +6,7 @@ argument-hint: "[run_id]"
 Resume a v7 (Workflow-native) pipeline run. This is **not** the v4 `orchestrate next` loop — v7 resumes
 by re-emitting `workflow.js` and re-invoking the `Workflow` tool with `resumeFromRunId`.
 
-Set `AIDP_SKILL_ROOT` to `~/.claude/skills/ai-dev-pipeline-v7` for every `aidp` call so v7 templates are
+Use `AIDP_SKILL_ROOT` from the user environment (`D:\AIDP\skill` in the gamedev profile) for every `aidp` call so v7 templates are
 discovered.
 
 - `$1` = run_id. If omitted, run `rtk aidp status --format json-pretty` (it lists both the vault runs and

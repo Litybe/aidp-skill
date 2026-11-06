@@ -3,7 +3,7 @@ name: analyzer
 role: research
 default_scope: stage_dir_only
 output_envelope: agent-reply.v4
-description: Generic research agent. Reads code, docs, tickets; explores; synthesizes. Specialized via skills (graphify-context, event-architecture, study-synthesis, pipeline-discovery, ...).
+description: Generic research agent. Reads code, docs, tickets; explores; synthesizes. Specialized via skills (graphify, unity-csharp-dev, map-world-design, ...).
 ---
 
 # analyzer

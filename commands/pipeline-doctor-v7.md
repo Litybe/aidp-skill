@@ -3,19 +3,20 @@ description: Health-check the ai-dev-pipeline-v7 install — binary, skill compa
 argument-hint: ""
 ---
 
-Set `AIDP_SKILL_ROOT` to `~/.claude/skills/ai-dev-pipeline-v7`, then run `rtk aidp doctor --format json-pretty`
+Use `AIDP_SKILL_ROOT` from the user environment (`D:\AIDP\skill` in the gamedev profile), then run `rtk aidp doctor --format json-pretty`
 and present the result to the user in plain language.
 
 Procedure:
 
 1. Run `rtk aidp doctor --format json-pretty` with `AIDP_SKILL_ROOT` pointing at the **v7** skill root. (If the
-   command itself fails because `aidp` is not on PATH, suggest `/pipeline-setup-v7`.)
+   command itself fails because `aidp` is not on PATH, suggest `/pipeline-setup-gamedev-v7`.)
 2. Parse the JSON. It has shape `{ "ok": bool, "checks": [{ "name", "ok", "detail", "fix" }] }`.
    v7 adds the `vault` check (where pipeline output lands, and whether that directory exists),
    plus the observations `vault_ambiguous` (several vaults were in reach — pin one) and
    `legacy_runs` (pre-v7 runs still in the repo; they stay readable, nothing to do).
-3. Sanity-check the `skill_root` check: its `detail` must point at `ai-dev-pipeline-v7`. If it points at
-   another skill (e.g. v4), the env var is wrong — flag it and show the fix.
+3. Sanity-check the `skill_root` check: its `detail` must point at the v7 skill (`D:\AIDP\skill` in the
+   gamedev profile). If it points at another skill (e.g. v4), the env var is wrong — flag it and show the fix.
+   A red `ci_autopilot_hooks` is expected in the gamedev profile (no CI): say so, it is not a failure.
 4. Render a markdown summary:
    - Header: `Doctor: <N>/<TOTAL> checks pass` (green if `ok: true`, red otherwise).
    - One line per check: `✅` or `❌` + check name + detail.
@@ -24,9 +25,10 @@ Procedure:
      `target_build` (PATH resolves to a `target/debug` or worktree build), `mismatch` (PATH resolves a
      different binary than the one running), `older_than_running` (that binary is also older),
      `older_than_sources` (older than the newest sources or `Cargo.toml`/`Cargo.lock` of the aidp
-     repository, found through `AIDP_SRC`). Recommend `/pipeline-setup-v7`. Note that running doctor
+     repository, found through `AIDP_SRC`). Recommend putting a fresh build in `D:\AIDP\bin`, then
+     `/pipeline-setup-gamedev-v7`. Note that running doctor
      from a `rtk cargo run` or worktree build is red by design.
    - A red `skill_compat` means the installed `aidp` is older than the `min_aidp_version` this skill's
-     `SKILL.md` declares. Recommend pulling the aidp repository, then `/pipeline-setup-v7`.
+     `SKILL.md` declares. Recommend a fresh build of the aidp repository in `D:\AIDP\bin`.
 5. If everything is OK, mention the next step: `/run-pipeline-v7 <template>` to start work, or
    `/pipeline-status-v7` to see existing runs.

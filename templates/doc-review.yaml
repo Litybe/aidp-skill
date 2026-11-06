@@ -1,0 +1,105 @@
+version: 5
+id: doc-review
+description: >
+  Gamedev route `doc`, review step: devil's advocate review of the PR of a
+  documentation issue, read only. The reviewer tries to prove the change is
+  NOT consistent with the canon: BIBLE read by index (00_INDEX, then only the
+  documents the diff touches and the 01_canon sections that bind them),
+  conflict rule 04_regle_de_conflit applied (01_canon wins; then the owner
+  document of the subject, canon §10.1; a contradiction is noted in
+  99_revue_critique/, never silently resolved), identifier conventions and
+  state markers kept, every cited identifier exists, figures (module size
+  64 x 38 cells, enemy counts, ability order, biomes) equal to the canon and
+  owner document, « Questions ouvertes » section present, no dead link, no
+  proposal that changes the canon without the [proposition hors canon] marker.
+  Then the criteria of the issue, one by one, with proof (file, line).
+
+  No Unity, no git write, no edit. Outputs read by the flow (contract C4):
+  verdict.json {verdict: done | need-fix, ...}, findings.json {findings,
+  fix_needed} and the Markdown report review.md in the stage dir.
+inputs:
+  issue: { required: false, kind: string, default: "", description: "GitHub issue number; its linked PR is reviewed." }
+  pr: { required: false, kind: string, default: "", description: "PR number to review. Empty: the PR linked to `issue`, else the open PR of the current branch." }
+  feature: { required: false, kind: string, description: "Ticket label; names the vault run folder." }
+settings:
+  knowledge_graph:
+    enabled: false
+stages:
+  - name: prepare
+    agent: executor
+    model: haiku
+    scope: { mode: stage_dir_only }
+    policy:
+      - "Never ask the user a question. Decide open points yourself and record them as assumptions."
+      - "Read only: no git command that changes anything, no commit, no push, no GitHub write. Another run may use the working directory."
+    inputs:
+      issue: "{{ inputs.issue }}"
+      pr: "{{ inputs.pr }}"
+    with:
+      instructions: >
+        (1) `rtk gh repo view --json nameWithOwner,defaultBranchRef`. (2) The
+        PR (`pr`, else the one linked to `issue`, else the open PR of the
+        current branch; none or closed: blocked) and the issue criteria. (3)
+        `rtk gh pr view <pr> --json body,files,headRefOid` and `rtk gh pr
+        diff <pr>` saved as diff.patch in the stage dir; download the changed
+        documents at the head sha into `files/` (`rtk gh api
+        "repos/<repo>/contents/<path>?ref=<headRefOid>" -H "Accept:
+        application/vnd.github.raw"`). (4) Reading plan by index: read
+        .claude/BIBLE/00_INDEX/ of the working directory, then list the
+        01_canon sections and owner documents that bind the changed ones.
+        (5) Round: 1 + the PR comments headed « Revue avocat du diable ».
+        Write context.json: repo, pr, issue, headSha, round, criteria, files,
+        reading_plan, owner_documents.
+    outputs: [context.json]
+
+  - name: review
+    agent: executor
+    model: sonnet
+    needs: [prepare]
+    scope: { mode: stage_dir_only }
+    policy:
+      - "Read only on the project: never edit a document, never use git, never open Unity."
+      - "Devil's advocate: the change is not consistent until each check and each criterion is proven. Finding defects is success: reply completed once findings.json is written and re-read."
+      - "Read the BIBLE by sections from the reading plan, not whole; cite file and section for every claim."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      task: >
+        Read the reading plan, then the diff. (A) Canon: each changed
+        statement against 01_canon and the owner document; on a conflict apply
+        04_regle_de_conflit and say which document is right. (B) Conventions:
+        identifiers (02_conventions), state markers (03), every identifier
+        cited exists in its owner document, no renamed identifier. (C)
+        Figures and names: module size, enemy counts, ability order, biomes,
+        names fixed by the canon. (D) Structure: sub-file layout kept, a
+        « Questions ouvertes » section, decisions pending for the director
+        listed, no [proposition hors canon] presented as canon, dead links or
+        paths (`rtk grep`). (E) The criteria of the issue, each ✅ proven (file
+        and line) / ❌ missing or wrong / ⚠️ not verifiable. Write review.md
+        (Markdown, headed « ## Revue avocat du diable — verdict : done |
+        need-fix », the checks, the criterion table, « ### À corriger » one
+        actionable line per ❌ or blocking ⚠️) and findings.json:
+        {"findings": [{id, severity (bloquant|majeur|mineur), check
+        (canon|convention|figure|structure|criterion), file, section,
+        evidence, canon_source, fix}], "fix_needed": <bool>, "criteria":
+        [{id, status, proof}]}. fix_needed is true when any finding is
+        bloquant or majeur, or a criterion is ❌. Mirror it as the strict
+        boolean signals.fix_needed.
+    outputs: [findings.json, review.md]
+
+  - name: verdict
+    agent: executor
+    model: haiku
+    needs: [review]
+    scope: { mode: stage_dir_only }
+    policy:
+      - "No GitHub write, no commit, no push."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      findings: "{{ stages.review.outputs.findings }}"
+    with:
+      instructions: >
+        Write verdict.json: {"verdict": "need-fix" when findings.fix_needed
+        else "done", "fix_needed": <bool>, "pr": <n>, "round": <n>,
+        "blocking": <n>, "findings": <count>, "criteria_total": <n>,
+        "criteria_done": <n>, "next": "fix" when need-fix else "merge"}.
+    outputs: [verdict.json]

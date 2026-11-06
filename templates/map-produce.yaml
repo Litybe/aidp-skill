@@ -1,0 +1,169 @@
+version: 5
+id: map-produce
+description: >
+  Gamedev route `map`, produce step: one GitHub issue that asks for rooms,
+  a region or a world change becomes a draft PR with the LDtk map. Follows
+  the map-create workflow of the game (graph first, geometry second): prepare
+  (issue, BIBLE sections, branch), graph (skill map-world-design: update
+  Docs/MapDesign/world_graph.json and validate it with validate_graph.py, zero
+  FAIL before anything is painted), rooms (skills map-room-design then ldtk:
+  one brief per room, blockout, gameplay, detail, calibrated on the player
+  movement of map-create/references/constants.md, rendered and measured at
+  each pass, 3 iterations per room at most), then report (room_metrics.py
+  --all --graph, validate_graph.py --ldtk, `ldtk validate`, PNG renders of the
+  world and of each room, commit, push, draft PR `Closes #n`).
+
+  The .ldtk file is only modified through the ldtk skill (never by hand), the
+  BIBLE is read by index (00_INDEX, then 01_canon and 06_maps_biomes for the
+  rooms: names, sizes, enemy counts are canon). Nothing is wired in Unity: the
+  PR body lists what stays to wire (rules U1 to U6 of unity-import.md, doors,
+  BoundsCam, PlayerSpawn) and reminds that LDtk must be reopened and saved
+  (Ctrl+S) to recompute the auto-layers. LDtk and Unity are never opened by
+  this pipeline.
+
+  Outputs read by the flow (contract C4): pr.json {pr, branch, summary}.
+  Stage ids are the C5 ones (prepare, graph, rooms, report); the model policy
+  of the daemon overrides the models written here.
+
+  Needs the skills map-create, map-world-design, map-room-design, ldtk and
+  ldtk-delete (deletions needed by the task are authorised by ldtk-delete,
+  protocol dry-run, run, validate, report) under ~/.claude/skills.
+inputs:
+  issue: { required: false, kind: string, default: "", description: "GitHub issue number describing the rooms or region; the PR will close it (`Closes #n`)." }
+  prompt: { required: false, kind: string, default: "", description: "What to build: region, rooms, roles, abilities, locks. Empty: taken from the issue body." }
+  ldtk_file: { required: false, kind: string, default: "Assets/MAP_LDTK/Map1.ldtk", description: "LDtk file to modify, relative to the project." }
+  graph_file: { required: false, kind: string, default: "Docs/MapDesign/world_graph.json", description: "World graph (source of truth), relative to the project." }
+  feature: { required: false, kind: string, description: "Ticket label; names the vault run folder." }
+settings:
+  knowledge_graph:
+    enabled: false
+stages:
+  - name: prepare
+    agent: executor
+    model: haiku
+    scope: { mode: repo_wide }
+    policy:
+      - "Never ask the user a question. Decide open points yourself and record them as assumptions."
+      - "No map edit. The only repository write is creating the working branch."
+    inputs:
+      issue: "{{ inputs.issue }}"
+      prompt: "{{ inputs.prompt }}"
+      ldtk_file: "{{ inputs.ldtk_file }}"
+      graph_file: "{{ inputs.graph_file }}"
+    with:
+      instructions: >
+        (1) The working directory must hold Assets/ and ProjectSettings/;
+        otherwise blocked. (2) `rtk gh repo view --json
+        nameWithOwner,defaultBranchRef`. (3) The request: `prompt`, else the
+        issue (`rtk gh issue view <n> --json title,body,labels`): keep its
+        CA-n criteria, rooms, regions, abilities, locks, BIBLE ids (R<n>_<nn>_
+        <role>, B<n>, A<n>). (4) BIBLE by index: read
+        .claude/BIBLE/00_INDEX (reading order, conflict rule), then only the
+        sections of 01_canon (§2.3, §10.5) and 06_maps_biomes that the request
+        touches; list in the context the canon facts that bind the rooms
+        (names, module sizes of 64 x 38 cells, enemy counts, biome). (5)
+        Baseline: `python ~/.claude/skills/ldtk/scripts/ldtk.py summary` and
+        `validate_graph.py` on the current graph, results kept. (6) Branch:
+        the current one when it is not the base branch (the flow made it),
+        else `map/<issue>-<slug>` from the base branch (`git switch -c`).
+        Write context.json: repo, projectRoot, baseBranch, branch, issue,
+        title, request, criteria, ldtk_file, graph_file, canon (list of
+        {id, fact, source}), baseline.
+    outputs: [context.json]
+
+  - name: graph
+    description: World graph - rooms, doors, locks, abilities; validated by script before any geometry.
+    agent: executor
+    model: opus
+    needs: [prepare]
+    skills: [map-create, map-world-design]
+    scope: { mode: repo_wide }
+    policy:
+      - "Never ask the user a question; decide open points and record them as assumptions."
+      - "Follow map-world-design: extend the existing graph, never restart from zero. Fix the graph, never the script, until validate_graph.py prints zero FAIL; explain each remaining WARN."
+      - "Edit only the graph file and the world-design notes. No .ldtk write in this stage."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+    with:
+      instructions: >
+        Apply the procedure of the map-world-design skill to `context.request`:
+        abilities among those of the game, regions, skeleton (hub of degree
+        3 or more), locks seen before their key, loops and shortcuts, saves,
+        rhythm. Node ids follow R<n>_<nn>_<role>, sizes are in 512 x 300 px
+        modules, and the canon facts of `context.canon` win over any choice.
+        Write context.graph_file, run `python
+        ~/.claude/skills/map-world-design/scripts/validate_graph.py
+        <graph_file>` (add `--ldtk <ldtk_file>` once rooms exist) and keep
+        its output. Write graph.json: {nodes_added, nodes_changed, edges,
+        validate: {fail, warn, output}, warns_explained, assumptions,
+        rooms_to_build: [{id, role, size, region, edges, ability, lock}]}.
+        Any FAIL left: status blocked with the list.
+    outputs: [graph.json]
+
+  - name: rooms
+    description: One brief per room, then blockout, gameplay and detail in LDtk, rendered and measured at each pass.
+    agent: executor
+    model: opus
+    needs: [graph]
+    skills: [map-create, map-room-design, ldtk, ldtk-delete]
+    scope: { mode: repo_wide }
+    policy:
+      - "Never ask the user a question; decide open points and record them as assumptions."
+      - "Modify the .ldtk only through the ldtk skill CLI (ldtk.py, ascii_room.py): never by hand. Paint only what exists in the file: no new layer, IntGrid value or enum; list what is missing instead."
+      - "Per room: brief, blockout, gameplay, detail; render a PNG after each pass, read it, write 3 numbered defects, fix one at a time, re-measure; 3 iterations per room at most, then record the room as open."
+      - "Do not touch third-party code, scenes, prefabs or scripts. Never open or save LDtk or Unity. Do not commit."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      graph: "{{ stages.graph.outputs.graph }}"
+    with:
+      instructions: >
+        For each room of graph.rooms_to_build, apply map-room-design: brief
+        in Docs/MapDesign/briefs/<room>.md (one idea, a role, size in
+        modules, canon facts), then the passes of the skill with the movement
+        constants of map-create/references/constants.md (jump height 6.7 cells,
+        range 11.4, 13.2 with coyote, door opening 4 to 8 cells, aligned with
+        the neighbour). After each pass run `room_metrics.py --file
+        <ldtk_file> --level <room> --role <role>` and `ldtk.py render <room>
+        --grid`, then, at the end of the gameplay pass, the playability lint
+        `Docs/MapDesign/tools/r1lint.py` when the project has it. Keep the
+        rendered PNGs in the stage dir. Write rooms.json: per room {id,
+        brief, passes, iterations, metrics: {fail, warn, output}, png,
+        entities, status: done | open, defects_left}, plus to_wire_in_unity
+        (rules U1 to U6 of map-create/references/unity-import.md not yet
+        applied, doors, BoundsCam, PlayerSpawn), missing_in_ldtk and
+        assumptions.
+    outputs: [rooms.json]
+
+  - name: report
+    description: Whole-map metrics, PNG renders, commit, push, draft PR.
+    agent: executor
+    model: haiku
+    needs: [rooms]
+    scope: { mode: repo_wide }
+    policy:
+      - "Never ask the user a question. Never merge, never mark the PR ready."
+      - "Commit only the map files (.ldtk, graph, briefs, rendered PNGs under Docs/MapDesign/renders/) on the working branch; never the base branch."
+      - "A FAIL left by the scripts: no PR, status blocked with the list (map-create: never deliver with a FAIL)."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      graph: "{{ stages.graph.outputs.graph }}"
+      rooms: "{{ stages.rooms.outputs.rooms }}"
+    with:
+      instructions: >
+        (1) Run `room_metrics.py --file <ldtk_file> --all --graph
+        <graph_file>`, `validate_graph.py <graph_file> --ldtk <ldtk_file>` and
+        `ldtk.py validate`; copy the outputs into metrics.txt in the stage
+        dir. (2) Render `ldtk.py render --world` and one PNG per room built
+        (`render <room> --grid`) into Docs/MapDesign/renders/ and the stage
+        dir. (3) Commit (`feat(map): ...`, French, one commit per subject) and
+        push the branch. (4) Open the PR as a DRAFT (`rtk gh pr create
+        --draft`) or update the existing one; title `feat(map): <subject>`.
+        Body: what was built, the room table (id, role, size, metrics), the
+        script outputs, the PNG paths, « À câbler dans Unity » (the
+        to_wire_in_unity list), the constants to recalibrate and the
+        questions for the playtest, the reminder to close LDtk without saving,
+        reopen the .ldtk and press Ctrl+S, then `Closes #<issue>` when
+        context.issue is set. (5) Write pr.json {"pr": <number>, "branch":
+        "<branch>", "summary": "<one sentence>", "url": "<url>", "rooms":
+        <n>, "fail": 0, "warn": <n>}.
+    outputs: [pr.json, metrics.txt]

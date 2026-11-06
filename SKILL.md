@@ -27,7 +27,9 @@ Pixellab (MCP), GitHub issues and PRs through `gh`, `aidp`, and graphify for the
 Jira, Confluence, Sonar, CI, Teams, Mongo, SQS, Datadog, deployment, Codex or Copilot.
 
 - Templates: `dev-unity`, `review-unity`, `fix-review-unity`, the `game-code` pipelines `unity-implement`,
-  `unity-review`, `unity-fix`, `unity-test` (shared recipe `templates/recipes/unity-verify.md`), `pixelart`, `dev-aidp` (aidp itself),
+  `unity-review`, `unity-fix`, `unity-test` (shared recipe `templates/recipes/unity-verify.md`), `pixelart`,
+  `art-produce`, `art-review`, `art-import`, `map-produce`, `map-review`, `map-test`, `doc-write`, `doc-review`
+  (see `docs/gamedev-content-pipelines.md`), `dev-aidp` (aidp itself),
   `dev-studio` (the `aidp-studio` front), `knowledge-init`, the fragments `knowledge-read`,
   `knowledge-update` and `review`, and the demo `dev-exemple`. Flow: `perso-delivery`.
 - Disk: nothing is installed on C:. Skill `D:\AIDP\skill` (`AIDP_SKILL_ROOT`), binary `D:\AIDP\bin`,

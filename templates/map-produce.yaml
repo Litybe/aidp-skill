@@ -70,7 +70,8 @@ stages:
         Write context.json: repo, projectRoot, baseBranch, branch, issue,
         title, request, criteria, ldtk_file, graph_file, canon (list of
         {id, fact, source}), baseline.
-    outputs: [context.json]
+        Memory (contract C10, templates/recipes/memory.md of the skill): with the issue number, run `rtk aidp memory context --project "<projectRoot>" --issue GH-<issue> --route map --stage graph --budget 2000` (without an issue, drop `--issue`) and save its output as memory-context.md in your stage dir, unchanged; if the command fails, write memory-context.md holding only « Mémoire indisponible : <cause> » and go on. Read the BIBLE by its index (00_INDEX) and get any passage you need with `rtk aidp rag search "<query>" --project "<projectRoot>" --source bible --budget 1500`, never whole.
+    outputs: [context.json, memory-context.md]
 
   - name: graph
     description: World graph - rooms, doors, locks, abilities; validated by script before any geometry.
@@ -80,11 +81,13 @@ stages:
     skills: [map-create, map-world-design]
     scope: { mode: repo_wide }
     policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Never ask the user a question; decide open points and record them as assumptions."
       - "Follow map-world-design: extend the existing graph, never restart from zero. Fix the graph, never the script, until validate_graph.py prints zero FAIL; explain each remaining WARN."
       - "Edit only the graph file and the world-design notes. No .ldtk write in this stage."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"
+      memory: "{{ stages.prepare.outputs.memory-context }}"
     with:
       instructions: >
         Apply the procedure of the map-world-design skill to `context.request`:
@@ -109,12 +112,14 @@ stages:
     skills: [map-create, map-room-design, ldtk, ldtk-delete]
     scope: { mode: repo_wide }
     policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Never ask the user a question; decide open points and record them as assumptions."
       - "Modify the .ldtk only through the ldtk skill CLI (ldtk.py, ascii_room.py): never by hand. Paint only what exists in the file: no new layer, IntGrid value or enum; list what is missing instead."
       - "Per room: brief, blockout, gameplay, detail; render a PNG after each pass, read it, write 3 numbered defects, fix one at a time, re-measure; 3 iterations per room at most, then record the room as open."
       - "Do not touch third-party code, scenes, prefabs or scripts. Never open or save LDtk or Unity. Do not commit."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"
+      memory: "{{ stages.prepare.outputs.memory-context }}"
       graph: "{{ stages.graph.outputs.graph }}"
     with:
       instructions: >
@@ -142,11 +147,13 @@ stages:
     needs: [rooms]
     scope: { mode: repo_wide }
     policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Never ask the user a question. Never merge, never mark the PR ready."
       - "Commit only the map files (.ldtk, graph, briefs, rendered PNGs under Docs/MapDesign/renders/) on the working branch; never the base branch."
       - "A FAIL left by the scripts: no PR, status blocked with the list (map-create: never deliver with a FAIL)."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"
+      memory: "{{ stages.prepare.outputs.memory-context }}"
       graph: "{{ stages.graph.outputs.graph }}"
       rooms: "{{ stages.rooms.outputs.rooms }}"
     with:

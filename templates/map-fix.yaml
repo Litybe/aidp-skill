@@ -48,7 +48,8 @@ stages:
         issue, pr, report_from, fix_round, items [{id, kind thread|review-point|test-ko,
         ref, text, severity, file, where, fix}], open_items, has_open_items,
         open_blocking (items of severity bloquant).
-    outputs: [context.json]
+        Memory (contract C10, templates/recipes/memory.md of the skill): with the issue number, run `rtk aidp memory context --project "<projectRoot>" --issue GH-<issue> --route map --stage fix --budget 2000` (without an issue, drop `--issue`) and save its output as memory-context.md in your stage dir, unchanged; if the command fails, write memory-context.md holding only « Mémoire indisponible : <cause> » and go on. Read the BIBLE by its index (00_INDEX) and get any passage you need with `rtk aidp rag search "<query>" --project "<projectRoot>" --source bible --budget 1500`, never whole.
+    outputs: [context.json, memory-context.md]
 
   - name: fix
     agent: executor
@@ -57,6 +58,8 @@ stages:
     needs: [prepare]
     scope: { mode: repo_wide }
     policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
+      - "Memory proposals: write memory-proposals.json (`{\"proposals\": []}` when nothing qualifies), 5 max, non-obvious reusable lessons only, as templates/recipes/memory.md §3 says."
       - "The PR exists: never open a new one, never merge, never mark it ready, never force-push."
       - "Never ask the user a question. Decide open points yourself and record them as assumptions."
       - "The .ldtk file is only modified through the ldtk skill CLI (never by hand); deletions the fix needs are authorised by ldtk-delete. Neither LDtk nor Unity is opened."
@@ -65,6 +68,7 @@ stages:
       - "Do not start a pipeline or another Claude session."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"
+      memory: "{{ stages.prepare.outputs.memory-context }}"
       task: >
         `context.has_open_items` false: nothing to fix. Write fix.json with
         pushed false, commits [], items [], write result.json with the pr,
@@ -85,4 +89,4 @@ stages:
         "<two sentences: what was fixed, what is left>", "pushed": <bool>}.
         Mirror pr, branch, summary and pushed as signals of the reply
         envelope. Status blocked: the reason goes in signals.blocked_reason.
-    outputs: [fix.json, result.json]
+    outputs: [fix.json, result.json, memory-proposals.json]

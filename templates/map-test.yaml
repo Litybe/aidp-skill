@@ -68,7 +68,8 @@ stages:
         Assets/Scripts/Playtest/). Write context.json: pr, issue, branch,
         criteria, rooms, paths (list of {room, steps: [{room, door, abilities}]}),
         scenarios_existing, probes, commands.
-    outputs: [context.json]
+        Memory (contract C10, templates/recipes/memory.md of the skill): with the issue number, run `rtk aidp memory context --project "<projectRoot>" --issue GH-<issue> --route map --stage import --budget 2000` (without an issue, drop `--issue`) and save its output as memory-context.md in your stage dir, unchanged; if the command fails, write memory-context.md holding only « Mémoire indisponible : <cause> » and go on. Read the BIBLE by its index (00_INDEX) and get any passage you need with `rtk aidp rag search "<query>" --project "<projectRoot>" --source bible --budget 1500`, never whole.
+    outputs: [context.json, memory-context.md]
 
   - name: import
     agent: executor
@@ -76,10 +77,12 @@ stages:
     needs: [prepare]
     scope: { mode: repo_wide }
     policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Never ask the user a question. Drive the Editor through the Unity MCP and the file bridge; no computer use."
       - "Never edit a scene, prefab or script. Never hand-edit the .ldtk. Never commit or push. Leave the Editor in Edit Mode."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"
+      memory: "{{ stages.prepare.outputs.memory-context }}"
       scene: "{{ inputs.scene }}"
       ldtk_file: "{{ inputs.ldtk_file }}"
       task: >
@@ -106,11 +109,13 @@ stages:
     needs: [import]
     scope: { mode: repo_wide }
     policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Never ask the user a question. Drive the Editor through the Unity MCP and the file bridge; no computer use."
       - "Only files under Assets/Tests/Playtest/Scenarios/ may be created or changed. No gameplay edit. A fail is reported, never worked around by loosening an assert."
       - "Never commit or push in this stage."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"
+      memory: "{{ stages.prepare.outputs.memory-context }}"
       import: "{{ stages.import.outputs.import }}"
       scene: "{{ inputs.scene }}"
       task: >
@@ -139,9 +144,12 @@ stages:
     needs: [test]
     scope: { mode: repo_wide }
     policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
+      - "Memory proposals: write memory-proposals.json (`{\"proposals\": []}` when nothing qualifies), 5 max, non-obvious reusable lessons only, as templates/recipes/memory.md §3 says."
       - "No GitHub write other than the commit and push of the scenario files. Never merge. Never commit anything else."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"
+      memory: "{{ stages.prepare.outputs.memory-context }}"
       import: "{{ stages.import.outputs.import }}"
       test: "{{ stages.test.outputs.test }}"
     with:
@@ -159,4 +167,4 @@ stages:
         failed for a real reason) commit the new scenario files alone
         (`test(map): scénarios de traversée ...`, French) and push the PR
         branch.
-    outputs: [result.json, report.md]
+    outputs: [result.json, report.md, memory-proposals.json]

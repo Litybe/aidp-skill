@@ -28,7 +28,7 @@ Jira, Confluence, Sonar, CI, Teams, Mongo, SQS, Datadog, deployment, Codex or Co
 
 - Templates: `dev-unity`, `review-unity`, `fix-review-unity`, the `game-code` pipelines `unity-implement`,
   `unity-review`, `unity-fix`, `unity-test` (shared recipe `templates/recipes/unity-verify.md`), `pixelart`,
-  `art-produce`, `art-review`, `art-import`, `map-produce`, `map-review`, `map-test`, `doc-write`, `doc-review`
+  `art-produce`, `art-review`, `art-import`, `map-produce`, `map-review`, `map-test`, `doc-write`, `doc-review`, and their fixes `art-fix`, `map-fix`, `doc-fix`
   (see `docs/gamedev-content-pipelines.md`), `dev-aidp` (aidp itself),
   `dev-studio` (the `aidp-studio` front), `knowledge-init`, the fragments `knowledge-read`,
   `knowledge-update` and `review`, and the demo `dev-exemple`. Flow: `perso-delivery`.

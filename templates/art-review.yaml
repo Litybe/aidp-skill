@@ -11,7 +11,8 @@ description: >
   durations, states, variants, expected files), the palette (no off-palette
   pixel) and the BIBLE notes the issue cites (direction artistique).
 
-  Outputs read by the flow (contract C4): verdict.json {verdict: done |
+  Outputs read by the flow (contract C4): result.json {verdict, findings} (contract C9,
+  mirrored in signals), verdict.json {verdict: done |
   need-fix, fix_needed, blocking, ...}, findings.json {findings: [...],
   fix_needed} and the Markdown report review.md in the stage dir. `done` only
   when no criterion is missing or wrong and no blocking item is unverifiable.
@@ -109,4 +110,10 @@ stages:
         "criteria_done": <n>, "next": "fix" when need-fix else
         "art-import"}. The review.md of the review stage is the report the
         flow posts on the PR; copy nothing into it.
-    outputs: [verdict.json]
+        Also write result.json, the file the flows read (contract C9, flat
+        object): {"verdict": "done|need-fix" (the verdict.json one),
+        "findings": <the findings array of findings.json, or its path when it
+        has more than 50 entries>}. Mirror verdict and findings (a count) as
+        signals of the reply envelope. Status blocked: the reason goes in
+        signals.blocked_reason.
+    outputs: [verdict.json, result.json]

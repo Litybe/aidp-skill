@@ -99,7 +99,9 @@ stages:
         Write result.json: {"passed": <true only when the compile gate was ok,
         every sprite meta ok (after fix) and every animation played without
         console error>, "pr": <n>, "failed": [<short reasons>], "report":
-        "report.md", "blocked": <reason or null>}. Write report.md: the
+        "report.md", "blocked": <reason or null>} (contract C9, flat object;
+        mirror passed and report as signals of the reply envelope; status
+        blocked: the reason goes in signals.blocked_reason). Write report.md: the
         compile gate result (errors, duration), a table per sprite (meta
         values, fixed or not, animation played, captures), the console, and
         the Editor changes made (meta fixes, scratch scene).

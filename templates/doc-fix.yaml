@@ -1,0 +1,85 @@
+version: 5
+id: doc-fix
+description: >
+  Gamedev route `doc`, fix step: correct a doc PR after a review,
+  then push. prepare → fix. The points ❌ / ⚠️ of the last `doc-review` comment of the PR and the unresolved review threads.
+  A fix never weakens a criterion, a test or a scenario to make it pass.
+
+  Fix on the PR's branch in the documentation files (.claude/BIBLE/, Docs/, ROADMAP); coherence checks after the edits; push
+  (never force) and post one `doc-fix-summary` PR comment (round, table
+  item / status / evidence, « Reste manuel »). The PR stays a draft: `ready`
+  and the merge belong to the flow. No Unity is opened.
+
+  Outputs read by the flows (contracts C4 and C9): result.json of the fix
+  stage {pr, branch, summary, pushed}, mirrored in signals (fix.json holds
+  the details). Stage ids are the C5 ones (prepare, fix).
+inputs:
+  issue: { required: false, kind: string, default: "", description: "GitHub issue number; the PR linked to it is fixed." }
+  pr: { required: false, kind: string, default: "", description: "PR number. Empty: the PR linked to `issue`, else the open PR of the current branch." }
+  feature: { required: false, kind: string, description: "Feature or ticket label; names the vault run folder." }
+settings:
+  knowledge_graph:
+    enabled: false
+stages:
+  - name: prepare
+    agent: executor
+    model: haiku
+    scope: { mode: repo_wide }
+    policy:
+      - "Never ask the user a question. Decide open points yourself and record them as assumptions."
+      - "Read only except checking out the PR head branch: no commit, no push, no GitHub write."
+    inputs:
+      issue: "{{ inputs.issue }}"
+      pr: "{{ inputs.pr }}"
+    with:
+      instructions: >
+        (1) `rtk gh repo view --json nameWithOwner,defaultBranchRef`. (2) The
+        PR: `pr` when given, else the PR linked to `issue`
+        (`rtk gh pr list --search "<n> in:body" --state open --json number`),
+        else the open PR of the current branch; none found, closed or merged:
+        blocked. (3) The issue: `issue`, else the `Closes #<n>` of the PR
+        body. (4) `rtk git status --porcelain` not empty: blocked. Check out
+        the PR head branch (`rtk gh pr checkout <pr>`) when it is not the
+        current one. (5) What to fix. The unresolved review threads, the ❌ / ⚠️ rows of the « À corriger » list of the last PR comment headed « Revue avocat du diable » that no `doc-fix-summary` comment answered yet, and the general PR comments of a human posted after it. (6) Fix round: 1 + the
+        number of PR comments containing `doc-fix-summary`. (7) Write
+        context.json: repo, projectRoot, baseBranch, branch (the PR head),
+        issue, pr, fix_round, items [{id, kind thread|review-point,
+        ref, text, severity, file, where, fix}], open_items, has_open_items,
+        open_blocking (items of severity bloquant). (8) Reading plan: read .claude/BIBLE/00_INDEX/ and list the 01_canon sections and owner documents that bind the documents to fix (`reading_plan`, `owner_documents`).
+    outputs: [context.json]
+
+  - name: fix
+    agent: executor
+    model: sonnet
+    needs: [prepare]
+    scope: { mode: repo_wide }
+    policy:
+      - "The PR exists: never open a new one, never merge, never mark it ready, never force-push."
+      - "Never ask the user a question. Decide open points yourself and record them as assumptions."
+      - "Edit documentation only (.claude/BIBLE/, Docs/, ROADMAP). No code, scene, asset or LDtk change."
+      - "Read the context.reading_plan files first. 01_canon wins; then the owner document; a contradiction is noted in 99_revue_critique/, never erased. Do not rename identifiers; keep state markers and the « Questions ouvertes » section."
+      - "No Unity: never open the Unity Editor or its MCP. Never weaken a criterion, a test or a scenario to make it pass."
+      - "Do not start a pipeline or another Claude session."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      task: >
+        `context.has_open_items` false: nothing to fix. Write fix.json with
+        pushed false, commits [], items [], write result.json with the pr,
+        branch, a summary « rien à corriger » and pushed false, post nothing
+        on GitHub, and reply completed with signals pr, branch, summary,
+        pushed false. Otherwise: Fix, from blocking to minor, every item of `context.items` in the documents of the PR, as your section « Lancé par aidp » says. Apply the `canon_source` and `fix` of each finding; a statement that contradicts 01_canon or its owner document is aligned on them (04_regle_de_conflit), or kept as [proposition hors canon] with a decision added to « Questions ouvertes » when the director must decide. After editing, re-run the coherence checks of doc-write: every cited identifier exists in its owner document, no figure differs from the canon, sub-file layout and « Questions ouvertes » kept, no dead link or path (`rtk grep`). Update Docs/ROADMAP.md when a roadmap task is completed.
+        Commit only the documentation files (.claude/BIBLE/, Docs/, ROADMAP) (`docs: ... (#<issue>)`, French, one
+        commit per subject), push on the PR's branch (never force), reply on
+        EACH review thread with what you did and the commit, resolve the
+        fixed ones, leave a thread open with the reason when you did not fix
+        it (wontfix with evidence, or blocked). Post ONE PR comment marked
+        `doc-fix-summary` (round `context.fix_round`): the table item /
+        status (✅ fixed, ⏸️ left) / evidence (commit, file, measure), then
+        « Reste manuel ». Write fix.json: {"pushed", "commits", "items": [{id,
+        status, evidence}], "fixed_refs", "open_blocking", "checks": [{check,
+        ok, detail}]} and result.json, the file the flows read (contract
+        C9, flat object): {"pr": <number>, "branch": "<PR head>", "summary":
+        "<two sentences: what was fixed, what is left>", "pushed": <bool>}.
+        Mirror pr, branch, summary and pushed as signals of the reply
+        envelope. Status blocked: the reason goes in signals.blocked_reason.
+    outputs: [fix.json, result.json]

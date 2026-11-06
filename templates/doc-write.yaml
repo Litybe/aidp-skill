@@ -21,7 +21,8 @@ description: >
   No Unity needed. The guardian rule of the project applies: when a
   roadmap task is completed, Docs/ROADMAP.md is updated.
 
-  Outputs read by the flow (contract C4): pr.json {pr, branch, summary}.
+  Outputs read by the flow (contracts C4 and C9): result.json {pr, branch,
+  summary} of the report stage, mirrored in signals (pr.json keeps the details).
   Stage ids are the C5 ones (prepare, write, report).
 inputs:
   issue: { required: false, kind: string, default: "", description: "GitHub issue number describing the documentation change; the PR will close it (`Closes #n`)." }
@@ -107,5 +108,9 @@ stages:
         noted, open questions for the director, the checks, then `Closes
         #<issue>` when context.issue is set. (3) Write pr.json {"pr":
         <number>, "branch": "<branch>", "summary": "<one sentence>", "url":
-        "<url>", "files": <n>}.
-    outputs: [pr.json]
+        "<url>", "files": <n>}. (4) Also write result.json, the file the
+        flows read (contract C9, flat object): {"pr": <PR number>, "branch":
+        "<branch>", "summary": "<one or two sentences: what changed, open
+        questions>"}. Mirror pr, branch and summary as signals of the reply
+        envelope. Status blocked: the reason goes in signals.blocked_reason.
+    outputs: [pr.json, result.json]

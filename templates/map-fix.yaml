@@ -1,0 +1,88 @@
+version: 5
+id: map-fix
+description: >
+  Gamedev route `map`, fix step: correct a map PR after a review or a failed test,
+  then push. prepare → fix. `report_from: review` (default): the points ❌ / ⚠️ of the last `map-review` comment of the PR and the unresolved review threads. `report_from: test`: the failures reported by the last `map-test` report of the PR.
+  A fix never weakens a criterion, a test or a scenario to make it pass.
+
+  Fix on the PR's branch in the map files (.ldtk, world_graph.json, briefs, renders under Docs/MapDesign/renders/); room_metrics.py, validate_graph.py, ldtk validate, PNG renders after the edits; push
+  (never force) and post one `map-fix-summary` PR comment (round, table
+  item / status / evidence, « Reste manuel »). The PR stays a draft: `ready`
+  and the merge belong to the flow. No Unity is opened.
+
+  Outputs read by the flows (contracts C4 and C9): result.json of the fix
+  stage {pr, branch, summary, pushed}, mirrored in signals (fix.json holds
+  the details). Stage ids are the C5 ones (prepare, fix).
+inputs:
+  issue: { required: false, kind: string, default: "", description: "GitHub issue number; the PR linked to it is fixed." }
+  pr: { required: false, kind: string, default: "", description: "PR number. Empty: the PR linked to `issue`, else the open PR of the current branch." }
+  report_from: { required: false, kind: enum, values: [review, test], default: review, description: "What to fix: review = the ❌/⚠️ points and open threads of the last map-review; test = the failures of the last map-test report." }
+  feature: { required: false, kind: string, description: "Feature or ticket label; names the vault run folder." }
+settings:
+  knowledge_graph:
+    enabled: false
+stages:
+  - name: prepare
+    agent: executor
+    model: haiku
+    scope: { mode: repo_wide }
+    policy:
+      - "Never ask the user a question. Decide open points yourself and record them as assumptions."
+      - "Read only except checking out the PR head branch: no commit, no push, no GitHub write."
+    inputs:
+      issue: "{{ inputs.issue }}"
+      pr: "{{ inputs.pr }}"
+      report_from: "{{ inputs.report_from }}"
+    with:
+      instructions: >
+        (1) `rtk gh repo view --json nameWithOwner,defaultBranchRef`. (2) The
+        PR: `pr` when given, else the PR linked to `issue`
+        (`rtk gh pr list --search "<n> in:body" --state open --json number`),
+        else the open PR of the current branch; none found, closed or merged:
+        blocked. (3) The issue: `issue`, else the `Closes #<n>` of the PR
+        body. (4) `rtk git status --porcelain` not empty: blocked. Check out
+        the PR head branch (`rtk gh pr checkout <pr>`) when it is not the
+        current one. (5) What to fix. By `report_from`. review: the unresolved review threads, the ❌ / ⚠️ rows of the « À corriger » list of the last PR comment headed « Revue avocat du diable » that no `map-fix-summary` comment answered yet, and the general PR comments of a human posted after it. test: the last PR comment holding the `map-test` report (its failed rows: path or scenario, criterion, expected, actual, message), plus the unresolved threads. (6) Fix round: 1 + the
+        number of PR comments containing `map-fix-summary`. (7) Write
+        context.json: repo, projectRoot, baseBranch, branch (the PR head),
+        issue, pr, report_from, fix_round, items [{id, kind thread|review-point|test-ko,
+        ref, text, severity, file, where, fix}], open_items, has_open_items,
+        open_blocking (items of severity bloquant).
+    outputs: [context.json]
+
+  - name: fix
+    agent: executor
+    model: sonnet
+    skills: [map-create, map-world-design, map-room-design, ldtk, ldtk-delete]
+    needs: [prepare]
+    scope: { mode: repo_wide }
+    policy:
+      - "The PR exists: never open a new one, never merge, never mark it ready, never force-push."
+      - "Never ask the user a question. Decide open points yourself and record them as assumptions."
+      - "The .ldtk file is only modified through the ldtk skill CLI (never by hand); deletions the fix needs are authorised by ldtk-delete. Neither LDtk nor Unity is opened."
+      - "A FAIL left by validate_graph.py, room_metrics.py or `ldtk.py validate` after your fix: do not push; reply blocked with the list."
+      - "No Unity: never open the Unity Editor or its MCP. Never weaken a criterion, a test or a scenario to make it pass."
+      - "Do not start a pipeline or another Claude session."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      task: >
+        `context.has_open_items` false: nothing to fix. Write fix.json with
+        pushed false, commits [], items [], write result.json with the pr,
+        branch, a summary « rien à corriger » and pushed false, post nothing
+        on GitHub, and reply completed with signals pr, branch, summary,
+        pushed false. Otherwise: Fix, from blocking to minor, every item of `context.items`, as your section « Lancé par aidp » says. Graph items (lock, key, loop, softlock, region): fix world_graph.json with map-world-design and re-run `validate_graph.py <graph_file> --ldtk <ldtk_file>` to zero FAIL before touching geometry. Room items (jump calibration, door openings, empty or flat room, enemies, hazards): fix the room with map-room-design and the ldtk skill, then `room_metrics.py --file <ldtk_file> --room <id> --graph <graph_file>` and a fresh PNG (`ldtk.py render <room> --grid`) into Docs/MapDesign/renders/. Finish with `room_metrics.py --all --graph`, `validate_graph.py --ldtk` and `ldtk.py validate`. An item from `report_from: test` (map-test report: scenario KO on a path, not-testable path) is fixed in the map (a gap too wide, a door out of range), never by weakening a scenario. Remind in « Reste manuel » to close LDtk without saving, reopen the .ldtk and press Ctrl+S.
+        Commit only the map files (.ldtk, world_graph.json, briefs, renders under Docs/MapDesign/renders/) (`fix(map): ... (#<issue>)`, French, one
+        commit per subject), push on the PR's branch (never force), reply on
+        EACH review thread with what you did and the commit, resolve the
+        fixed ones, leave a thread open with the reason when you did not fix
+        it (wontfix with evidence, or blocked). Post ONE PR comment marked
+        `map-fix-summary` (round `context.fix_round`): the table item /
+        status (✅ fixed, ⏸️ left) / evidence (commit, file, measure), then
+        « Reste manuel ». Write fix.json: {"pushed", "commits", "items": [{id,
+        status, evidence}], "fixed_refs", "open_blocking", "checks": [{check,
+        ok, detail}]} and result.json, the file the flows read (contract
+        C9, flat object): {"pr": <number>, "branch": "<PR head>", "summary":
+        "<two sentences: what was fixed, what is left>", "pushed": <bool>}.
+        Mirror pr, branch, summary and pushed as signals of the reply
+        envelope. Status blocked: the reason goes in signals.blocked_reason.
+    outputs: [fix.json, result.json]

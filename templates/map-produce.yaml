@@ -21,7 +21,8 @@ description: >
   (Ctrl+S) to recompute the auto-layers. LDtk and Unity are never opened by
   this pipeline.
 
-  Outputs read by the flow (contract C4): pr.json {pr, branch, summary}.
+  Outputs read by the flow (contracts C4 and C9): result.json {pr, branch,
+  summary} of the report stage, mirrored in signals (pr.json keeps the details).
   Stage ids are the C5 ones (prepare, graph, rooms, report); the model policy
   of the daemon overrides the models written here.
 
@@ -165,5 +166,9 @@ stages:
         reopen the .ldtk and press Ctrl+S, then `Closes #<issue>` when
         context.issue is set. (5) Write pr.json {"pr": <number>, "branch":
         "<branch>", "summary": "<one sentence>", "url": "<url>", "rooms":
-        <n>, "fail": 0, "warn": <n>}.
-    outputs: [pr.json, metrics.txt]
+        <n>, "fail": 0, "warn": <n>}. (6) Also write result.json, the file the
+        flows read (contract C9, flat object): {"pr": <PR number>, "branch":
+        "<branch>", "summary": "<one or two sentences: what was built, what
+        is left>"}. Mirror pr, branch and summary as signals of the reply
+        envelope. Status blocked: the reason goes in signals.blocked_reason.
+    outputs: [pr.json, metrics.txt, result.json]

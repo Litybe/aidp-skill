@@ -150,7 +150,9 @@ stages:
         import were ok and every scenario passed; a not-testable path is not a
         pass: it makes passed false when it covers a CA-n>, "pr": <n>,
         "scenarios": <n>, "failed": [<ids>], "not_testable": [<ids>],
-        "report": "report.md", "blocked": <reason or null>}. Write report.md:
+        "report": "report.md", "blocked": <reason or null>} (contract C9, flat
+        object; mirror passed and report as signals of the reply envelope;
+        status blocked: the reason goes in signals.blocked_reason). Write report.md:
         compile gate, import and console, a table path / scenario / result /
         expected / actual / capture, not-testable items with the missing
         probe or command, and the files created. When the scenarios passed (or

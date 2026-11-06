@@ -59,11 +59,22 @@ Shaders : le gate C1 les couvre si Unity les compile ; ajoute `Unity_ReadConsole
 
 Après un compile gate vert seulement.
 
-- Lance les tests par l'éditeur ouvert : `Unity_RunCommand` avec `UnityEditor.TestTools.TestRunner.Api.TestRunnerApi`
-  (`Execute` avec `Filter { testMode = TestMode.EditMode }`, puis `TestMode.PlayMode`), un `ICallbacks`
-  qui écrit `RunFinished` dans `.aidp/test-results/<requestId>-<mode>.json` (total, passed, failed,
-  noms et messages des échecs). Attends ce fichier (timeout 300 s EditMode, 600 s PlayMode).
-- Aucune assembly de tests du mode demandé : `tests: none` (pas un échec, mais dis-le).
+- Lance les tests par l'éditeur ouvert (contrat C8), un `requestId` par mode
+  (`<stage>-<epoch ms>`) : `Unity_RunCommand` avec
+  ```csharp
+  Aidp.Playtest.Editor.TestGate.Request("<requestId>", "EditMode"); // puis "PlayMode"
+  ```
+  Retour immédiat. Repli si `Unity_RunCommand` refuse : dépose
+  `.aidp/test-results/requests/<requestId>-<mode>.json` contenant `{}` (le pont le prend). N'écris
+  pas à la main d'appel `TestRunnerApi`.
+- Attends `.aidp/test-results/<requestId>-<mode>.json` (timeout 300 s EditMode, 600 s PlayMode ;
+  teste sa présence toutes les 5 s). Format :
+  ```json
+  { "id": "...", "mode": "EditMode", "total": 42, "passed": 41, "failed": 1, "skipped": 0, "durationMs": 9000,
+    "failures": [ { "name": "Ns.Class.Test", "message": "...", "stack": "..." } ], "finishedAt": "..." }
+  ```
+  Pas de fichier au délai : `blocked: unity-mcp`.
+- `total: 0` avec `"note": "no-tests"` (aucune assembly de tests du mode) : `tests: none` (pas un échec, mais dis-le).
 - Un test qui échoue est un échec du stage, sauf pour le stage `repro` où le rouge est attendu.
 - Un nouveau fichier sous `Assets/` a besoin de son `.meta` : l'éditeur ouvert l'a créé, `rtk git status`
   doit le montrer, commite-le avec le fichier. Ne commite jamais `Library/`, `Temp/`, `Logs/`,

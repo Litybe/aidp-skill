@@ -1,0 +1,89 @@
+version: 5
+id: art-fix
+description: >
+  Gamedev route `art`, fix step: correct a art PR after a review or a failed test,
+  then push. prepare → fix. `report_from: review` (default): the points ❌ / ⚠️ of the last `art-review` comment of the PR and the unresolved review threads. `report_from: test`: the failures reported by the last `art-import` report of the PR.
+  A fix never weakens a criterion, a test or a scenario to make it pass.
+
+  Fix on the PR's branch in the asset files (.aseprite, exported sheet / PNG / JSON, .meta, previews); Aseprite re-measure (lint, anim_audit, unity_validate), Unity export after the edits; push
+  (never force) and post one `art-fix-summary` PR comment (round, table
+  item / status / evidence, « Reste manuel »). The PR stays a draft: `ready`
+  and the merge belong to the flow. No Unity is opened.
+
+  Outputs read by the flows (contracts C4 and C9): result.json of the fix
+  stage {pr, branch, summary, pushed}, mirrored in signals (fix.json holds
+  the details). Stage ids are the C5 ones (prepare, fix). Stages that call Pixellab write pixellab-usage.json (C6).
+inputs:
+  issue: { required: false, kind: string, default: "", description: "GitHub issue number; the PR linked to it is fixed." }
+  pr: { required: false, kind: string, default: "", description: "PR number. Empty: the PR linked to `issue`, else the open PR of the current branch." }
+  report_from: { required: false, kind: enum, values: [review, test], default: review, description: "What to fix: review = the ❌/⚠️ points and open threads of the last art-review; test = the failures of the last art-import report." }
+  feature: { required: false, kind: string, description: "Feature or ticket label; names the vault run folder." }
+settings:
+  knowledge_graph:
+    enabled: false
+stages:
+  - name: prepare
+    agent: executor
+    model: haiku
+    scope: { mode: repo_wide }
+    policy:
+      - "Never ask the user a question. Decide open points yourself and record them as assumptions."
+      - "Read only except checking out the PR head branch: no commit, no push, no GitHub write."
+    inputs:
+      issue: "{{ inputs.issue }}"
+      pr: "{{ inputs.pr }}"
+      report_from: "{{ inputs.report_from }}"
+    with:
+      instructions: >
+        (1) `rtk gh repo view --json nameWithOwner,defaultBranchRef`. (2) The
+        PR: `pr` when given, else the PR linked to `issue`
+        (`rtk gh pr list --search "<n> in:body" --state open --json number`),
+        else the open PR of the current branch; none found, closed or merged:
+        blocked. (3) The issue: `issue`, else the `Closes #<n>` of the PR
+        body. (4) `rtk git status --porcelain` not empty: blocked. Check out
+        the PR head branch (`rtk gh pr checkout <pr>`) when it is not the
+        current one. (5) What to fix. By `report_from`. review: the unresolved review threads, the ❌ / ⚠️ rows of the « À corriger » list of the last PR comment headed « Revue avocat du diable » that no `art-fix-summary` comment answered yet, and the general PR comments of a human posted after it. test: the last PR comment holding the `art-import` report (its failed rows: path or scenario, criterion, expected, actual, message), plus the unresolved threads. (6) Fix round: 1 + the
+        number of PR comments containing `art-fix-summary`. (7) Write
+        context.json: repo, projectRoot, baseBranch, branch (the PR head),
+        issue, pr, report_from, fix_round, items [{id, kind thread|review-point|test-ko,
+        ref, text, severity, file, where, fix}], open_items, has_open_items,
+        open_blocking (items of severity bloquant), palette.
+    outputs: [context.json]
+
+  - name: fix
+    agent: pixel-fixer
+    model: sonnet
+    skills: [pixel-review, pixel-art, pixel-palette, pixel-animation, pixel-character, pixel-tileset, pixellab]
+    needs: [prepare]
+    scope: { mode: repo_wide }
+    policy:
+      - "The PR exists: never open a new one, never merge, never mark it ready, never force-push."
+      - "Never ask the user a question. Decide open points yourself and record them as assumptions."
+      - "Correct by hand with the Aseprite MCP, in the existing style, on the palette; never rescale, blur or filter."
+      - "Allowed Pixellab calls: free ones (pixelart_workbench, save_to_asset, get_*) and 0.1-generation cleanups within what is left of the 10 generations per issue. No new generation. Lack of generations or a balance under the reserve: blocked."
+      - "Write pixellab-usage.json (C6) in your stage dir when you call Pixellab: balanceBefore and balanceAfter (raw get_balance answers), generations (spent by this stage, 0 if none), jobs, recordedAt."
+      - "No Unity: never open the Unity Editor or its MCP. Never weaken a criterion, a test or a scenario to make it pass."
+      - "Do not start a pipeline or another Claude session."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      task: >
+        `context.has_open_items` false: nothing to fix. Write fix.json with
+        pushed false, commits [], items [], write result.json with the pr,
+        branch, a summary « rien à corriger » and pushed false, post nothing
+        on GitHub, and reply completed with signals pr, branch, summary,
+        pushed false. Otherwise: Fix, from blocking to minor, every item of `context.items` on the asset files of the PR, as your section « Lancé par aidp » says. Fix each item with the tool it names (Aseprite MCP: draw, color_remap, palette_sync, anim_offset, frame_duration, tag_set, slice_set, pivot_to_unity...), then re-measure on the corrected file: lint with the palette, anim_audit on each tag, unity_validate against the project profile, and the 1x look (preview). Export for Unity (sheet + JSON, pivot and slices per the profile) and keep the .meta values (16 PPU, Point, no mipmap, compression none). Save the corrected frames back to Pixellab when the asset has a Pixellab id. An item from `report_from: test` (art-import report: .meta wrong, animation not played, console error) is fixed in the asset files, never in a Unity scene. A fix that cannot be verified without the Unity Editor goes to « Reste manuel », not invented.
+        Commit only the asset files (.aseprite, exported sheet / PNG / JSON, .meta, previews) (`fix(art): ... (#<issue>)`, French, one
+        commit per subject), push on the PR's branch (never force), reply on
+        EACH review thread with what you did and the commit, resolve the
+        fixed ones, leave a thread open with the reason when you did not fix
+        it (wontfix with evidence, or blocked). Post ONE PR comment marked
+        `art-fix-summary` (round `context.fix_round`): the table item /
+        status (✅ fixed, ⏸️ left) / evidence (commit, file, measure), then
+        « Reste manuel ». Write fix.json: {"pushed", "commits", "items": [{id,
+        status, evidence}], "fixed_refs", "open_blocking", "checks": [{check,
+        ok, detail}]} and result.json, the file the flows read (contract
+        C9, flat object): {"pr": <number>, "branch": "<PR head>", "summary":
+        "<two sentences: what was fixed, what is left>", "pushed": <bool>}.
+        Mirror pr, branch, summary and pushed as signals of the reply
+        envelope. Status blocked: the reason goes in signals.blocked_reason.
+    outputs: [fix.json, result.json, pixellab-usage.json]

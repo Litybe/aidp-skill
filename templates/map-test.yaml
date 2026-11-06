@@ -1,0 +1,160 @@
+version: 5
+id: map-test
+description: >
+  Gamedev route `map`, test step in Unity: proves that the map of the PR
+  imports, loads and can be crossed. Stages: prepare (PR, rooms touched,
+  critical paths computed from the world graph), import (compile gate C1,
+  LDtk import of the .ldtk by the compiled LDtkUnity importer and the
+  LDtkMapPostprocessor, rooms present in the test scene, console clean),
+  test (PlaytestDriver scenarios C2: teleport into each touched room, give the
+  abilities the graph assumes at that point, cross the critical path door to
+  door, assert the position reached and the room), report.
+
+  Scenarios are data written to Assets/Tests/Playtest/Scenarios/
+  issue-<n>-ca<k>.json (non-regression library, schema of contract C2) and run
+  with Aidp.Playtest.Editor.PlaytestBridge.Run("<id>") through the Unity MCP,
+  or by dropping <project>/.aidp/playtest/requests/<id>.json; the results are
+  read from .aidp/playtest/results/<id>.json. Usage of C1 and C2: see
+  unity-verify.md of unity-issue-workflow. A probe or command the game lacks
+  (player, room, teleport, give) is reported as not testable, never faked.
+
+  The Unity Editor is held by the user: the flow step that runs this pipeline
+  carries `resource: unity-editor` (contract C3; the lock is a flow concern).
+  Without the Editor or the Unity MCP the run reports `blocked: unity-mcp`.
+  Nothing gameplay is edited: only the scenario files are added, committed
+  and pushed on the PR branch at the end (stage report).
+
+  Outputs read by the flow (contract C4): result.json {passed, report} and the
+  Markdown report report.md, with captures, in the stage dir.
+inputs:
+  issue: { required: false, kind: string, default: "", description: "GitHub issue number; its linked PR holds the map." }
+  pr: { required: false, kind: string, default: "", description: "PR number. Empty: the PR linked to `issue`, else the open PR of the current branch." }
+  scene: { required: false, kind: string, default: "Assets/Scenes/SceneGame/Game/Level_1.unity", description: "Scene that holds the LDtk map (the test scene of the project)." }
+  ldtk_file: { required: false, kind: string, default: "Assets/MAP_LDTK/Map1.ldtk", description: "LDtk file under test." }
+  graph_file: { required: false, kind: string, default: "Docs/MapDesign/world_graph.json", description: "World graph used to compute the critical paths." }
+  feature: { required: false, kind: string, description: "Ticket label; names the vault run folder." }
+settings:
+  knowledge_graph:
+    enabled: false
+stages:
+  - name: prepare
+    agent: executor
+    model: haiku
+    scope: { mode: stage_dir_only }
+    policy:
+      - "Never ask the user a question. Decide open points yourself and record them as assumptions."
+      - "Read only: no commit, no push, no branch switch, no GitHub write."
+    inputs:
+      issue: "{{ inputs.issue }}"
+      pr: "{{ inputs.pr }}"
+      ldtk_file: "{{ inputs.ldtk_file }}"
+      graph_file: "{{ inputs.graph_file }}"
+    with:
+      instructions: >
+        (1) The working directory must hold Assets/ and ProjectSettings/ and
+        have the PR branch checked out (the flow does it); otherwise blocked.
+        (2) The PR (`pr`, else the one linked to `issue`, else the open PR of
+        the current branch; none: blocked) and the issue criteria (CA-n). (3)
+        Rooms touched: the level names that differ between the base branch
+        .ldtk and the working copy (`ldtk.py summary` on both; `git show
+        <base>:<ldtk_file>` into the stage dir). (4) Critical paths: with a
+        short python script over graph_file (kept in the stage dir), for each
+        touched room the shortest path from the start room to it and through
+        it to its exits, respecting `requiert` (abilities held at each step);
+        write each path as a list of rooms, doors (`porte`, E_E->E_W) and the
+        abilities held. (5) The scenario files that already exist under
+        Assets/Tests/Playtest/Scenarios/ and the probes and commands the game
+        provides (grep [PlaytestProbe(...)] and [PlaytestCommand(...)] under
+        Assets/Scripts/Playtest/). Write context.json: pr, issue, branch,
+        criteria, rooms, paths (list of {room, steps: [{room, door, abilities}]}),
+        scenarios_existing, probes, commands.
+    outputs: [context.json]
+
+  - name: import
+    agent: executor
+    model: sonnet
+    needs: [prepare]
+    scope: { mode: repo_wide }
+    policy:
+      - "Never ask the user a question. Drive the Editor through the Unity MCP and the file bridge; no computer use."
+      - "Never edit a scene, prefab or script. Never hand-edit the .ldtk. Never commit or push. Leave the Editor in Edit Mode."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      scene: "{{ inputs.scene }}"
+      ldtk_file: "{{ inputs.ldtk_file }}"
+      task: >
+        (1) Compile gate C1 (Aidp.Playtest.Editor.CompileGate.Request through
+        Unity_RunCommand, result in .aidp/compile/results/; see
+        unity-verify.md): not ok means failed with the errors. (2) Make Unity
+        reimport the .ldtk (AssetDatabase.ImportAsset on `ldtk_file` through
+        Unity_RunCommand; the LDtkMapPostprocessor sets the sorting layer
+        GroundLevel, the layer Ground and the one-way bridges), then check
+        with Unity_ManageScene / Unity_ReadResource that `scene` holds one
+        level per room of `context.rooms`, that each has a collision layer and
+        the expected entities, and read the console (Unity_ReadConsole): an
+        importer error or a warning about these rooms fails the stage. (3) A
+        capture of the scene view of each touched room
+        (Unity_SceneView_Capture2DScene) into the stage dir. Missing Unity MCP
+        or Editor: import.json blocked "unity-mcp". Write import.json:
+        compile {ok, errors, durationMs}, blocked, reimport {ok, console},
+        rooms: [{id, present, collisions, entities, capture}].
+    outputs: [import.json]
+
+  - name: test
+    agent: executor
+    model: sonnet
+    needs: [import]
+    scope: { mode: repo_wide }
+    policy:
+      - "Never ask the user a question. Drive the Editor through the Unity MCP and the file bridge; no computer use."
+      - "Only files under Assets/Tests/Playtest/Scenarios/ may be created or changed. No gameplay edit. A fail is reported, never worked around by loosening an assert."
+      - "Never commit or push in this stage."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      import: "{{ stages.import.outputs.import }}"
+      scene: "{{ inputs.scene }}"
+      task: >
+        Skip with passed false and the reason when `import` is not ok. For each
+        critical path of `context.paths` and each CA-n that concerns movement
+        or room access, write a scenario in the schema of contract C2 into
+        Assets/Tests/Playtest/Scenarios/issue-<n>-ca<k>.json (id, scene,
+        timeoutMs, setup [teleport to the entry door of the room (cell x 8 px
+        / 16 PPU = 0.5 unit, plus the level origin from the .ldtk), give each
+        ability held at that point], steps [hold/press/wait to cross the
+        room, with the timings the player movement needs: walk 6 u/s, jump
+        impulse 14 u/s], assert [position past the exit door, e.g.
+        "player.x > <exit x>", room id when a probe exists, hp unchanged]) and
+        a capture at the end. Run each with
+        Aidp.Playtest.Editor.PlaytestBridge.Run("<id>") (Unity_RunCommand),
+        read .aidp/playtest/results/<id>.json, and keep the captures. A path
+        that fails twice with the same assert is a real failure; one that
+        fails for a missing probe or command is « not testable » (list it).
+        Write test.json: scenarios [{id, room, ca, passed, actual, expected,
+        captures, error}], not_testable [{id, reason}], created (files).
+    outputs: [test.json]
+
+  - name: report
+    agent: executor
+    model: haiku
+    needs: [test]
+    scope: { mode: repo_wide }
+    policy:
+      - "No GitHub write other than the commit and push of the scenario files. Never merge. Never commit anything else."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      import: "{{ stages.import.outputs.import }}"
+      test: "{{ stages.test.outputs.test }}"
+    with:
+      instructions: >
+        Write result.json: {"passed": <true only when the compile gate and the
+        import were ok and every scenario passed; a not-testable path is not a
+        pass: it makes passed false when it covers a CA-n>, "pr": <n>,
+        "scenarios": <n>, "failed": [<ids>], "not_testable": [<ids>],
+        "report": "report.md", "blocked": <reason or null>}. Write report.md:
+        compile gate, import and console, a table path / scenario / result /
+        expected / actual / capture, not-testable items with the missing
+        probe or command, and the files created. When the scenarios passed (or
+        failed for a real reason) commit the new scenario files alone
+        (`test(map): scénarios de traversée ...`, French) and push the PR
+        branch.
+    outputs: [result.json, report.md]

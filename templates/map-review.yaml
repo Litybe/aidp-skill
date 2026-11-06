@@ -1,0 +1,125 @@
+version: 5
+id: map-review
+description: >
+  Gamedev route `map`, review step: devil's advocate review of the PR of a
+  map issue, read only. The reviewer tries to prove the map is NOT ready.
+  Three axes, each computed by script and not declared: (1) solvability of
+  the graph (validate_graph.py on the PR's world_graph.json, crossed with the
+  .ldtk through --ldtk: no softlock, every lock seen before its key, no room
+  that requires an ability the player does not have yet); (2) jumps calibrated
+  on the player movement (room_metrics.py --all --graph, the playability lint
+  r1lint.py when present, and the constants of map-create/references/
+  constants.md: jump height 6.7 cells, range 11.4, 13.2 with coyote, double
+  jump 13.3, dash 8, wall jump 9.6; nothing that needs more than the ability
+  of the place allows); (3) coherence with the BIBLE (names, module sizes,
+  enemy counts, biome, ability order from 01_canon and 06_maps_biomes; when
+  two documents disagree, apply 00_INDEX/04_regle_de_conflit: 01_canon wins,
+  then the owner document of the subject). Then the criteria of the issue,
+  one by one, with proof (script output, room id, PNG).
+
+  Works on the PR files downloaded into the stage dir (no git, no edit of the
+  project, no LDtk, no Unity). Outputs read by the flow (contract C4):
+  verdict.json {verdict: done | need-fix, ...}, findings.json {findings,
+  fix_needed} and the Markdown report review.md in the stage dir.
+inputs:
+  issue: { required: false, kind: string, default: "", description: "GitHub issue number; its linked PR is reviewed." }
+  pr: { required: false, kind: string, default: "", description: "PR number to review. Empty: the PR linked to `issue`, else the open PR of the current branch." }
+  feature: { required: false, kind: string, description: "Ticket label; names the vault run folder." }
+settings:
+  knowledge_graph:
+    enabled: false
+stages:
+  - name: prepare
+    agent: executor
+    model: haiku
+    scope: { mode: stage_dir_only }
+    policy:
+      - "Never ask the user a question. Decide open points yourself and record them as assumptions."
+      - "Read only: no git command that changes anything, no commit, no push, no GitHub write. Another run may use the working directory."
+    inputs:
+      issue: "{{ inputs.issue }}"
+      pr: "{{ inputs.pr }}"
+    with:
+      instructions: >
+        (1) `rtk gh repo view --json nameWithOwner,defaultBranchRef`. (2) The
+        PR (`pr`, else the one linked to `issue`, else the open PR of the
+        current branch; none or closed: blocked) and the issue (`issue`, else
+        the `Closes #<n>` of the PR body): list every criterion. (3) `rtk gh
+        pr view <pr> --json body,files,headRefOid`. Download into the `files/`
+        folder of the stage dir (`rtk gh api
+        "repos/<repo>/contents/<path>?ref=<headRefOid>" -H "Accept:
+        application/vnd.github.raw"`) the .ldtk, the world graph, the briefs
+        and the renders of the PR, and from the base branch the previous
+        .ldtk and graph for the diff. (4) BIBLE by index: read the files
+        .claude/BIBLE/00_INDEX/ and, in 01_canon and 06_maps_biomes, only the
+        sections about the rooms, regions and abilities the PR touches
+        (`rtk gh api` on the head sha is not needed: the BIBLE of the working
+        directory is the canon). (5) Round: 1 + the PR comments headed
+        « Revue avocat du diable ». Write context.json: repo, pr, issue,
+        headSha, round, criteria, files (list of {path, local}), rooms
+        touched (diff of level names), canon (list of {id, fact, source}).
+    outputs: [context.json]
+
+  - name: review
+    agent: executor
+    model: sonnet
+    needs: [prepare]
+    skills: [map-create, map-world-design, map-room-design, ldtk]
+    scope: { mode: stage_dir_only }
+    policy:
+      - "Read only on the project: run the scripts on the copies in the stage dir, never write the .ldtk or the graph, never use git, never open LDtk or Unity."
+      - "Devil's advocate: the map is not ready until each axis and each criterion is proven. Finding defects is success: reply completed once findings.json is written and re-read."
+      - "A claim is proven by a script output or a measure, never by reading the PR text alone."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      task: >
+        Run, on the copies of `context.files`: `python
+        ~/.claude/skills/map-world-design/scripts/validate_graph.py <graph>
+        --ldtk <ldtk>`, `python ~/.claude/skills/map-room-design/scripts/
+        room_metrics.py --file <ldtk> --all --graph <graph>`, `python
+        ~/.claude/skills/ldtk/scripts/ldtk.py validate` and, when the PR
+        carries it, the lint Docs/MapDesign/tools/r1lint.py. (A) Solvability:
+        every FAIL is bloquant; reachability from the start with the abilities
+        in order; no softlock (each one-way leads to an exit); locks seen
+        before the key; the first save and first ability as map-world-design
+        says. (B) Jumps calibrated: for each platform gap, height and door
+        of the rooms touched, compare to the constants (6.7 / 11.4 / 13.2 /
+        13.3 / 8 / 9.6 cells) for the ability the player has at that point; a
+        jump over the limit, a pure dash gap, a door opening outside 4 to 8
+        cells or not aligned with the neighbour is a finding with the cells
+        measured. Rooms flat, empty or copy-pasted (checklist.md of
+        map-create) are findings. (C) BIBLE: names, ids, module sizes, enemy
+        counts and biome of the touched rooms against `context.canon`; the
+        rule of conflict decides which document is right; a contradiction
+        inside the BIBLE is a finding for the doc route, not for the map. (D)
+        The criteria of the issue, each ✅ proven (with the proof) / ❌
+        missing or wrong / ⚠️ not verifiable here (needs Unity: map-test).
+        Write review.md (Markdown, headed « ## Revue avocat du diable —
+        verdict : done | need-fix », the three axes, the criterion table,
+        « ### À corriger » one actionable line per ❌ or ⚠️ blocking) and
+        findings.json: {"findings": [{id, severity (bloquant|majeur|mineur),
+        axis (solvability|jumps|bible|criterion), room, evidence, expected,
+        fix}], "fix_needed": <bool>, "axes": {solvability, jumps, bible}
+        each {fail, warn, ok}, "criteria": [{id, status, proof}]}.
+        fix_needed is true when any finding is bloquant or majeur, or a
+        criterion is ❌. Mirror it as the strict boolean signals.fix_needed.
+    outputs: [findings.json, review.md]
+
+  - name: verdict
+    agent: executor
+    model: haiku
+    needs: [review]
+    scope: { mode: stage_dir_only }
+    policy:
+      - "No GitHub write, no commit, no push."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      findings: "{{ stages.review.outputs.findings }}"
+    with:
+      instructions: >
+        Write verdict.json: {"verdict": "need-fix" when findings.fix_needed
+        else "done", "fix_needed": <bool>, "pr": <n>, "round": <n>,
+        "blocking": <n>, "findings": <count>, "criteria_total": <n>,
+        "criteria_done": <n>, "next": "fix" when need-fix else
+        "map-test"}.
+    outputs: [verdict.json]

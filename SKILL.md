@@ -26,7 +26,8 @@ This copy of the skill serves solo Unity game development. Tools: Unity (and its
 Pixellab (MCP), GitHub issues and PRs through `gh`, `aidp`, and graphify for the knowledge graph. No
 Jira, Confluence, Sonar, CI, Teams, Mongo, SQS, Datadog, deployment, Codex or Copilot.
 
-- Templates: `dev-unity`, `review-unity`, `fix-review-unity`, `pixelart`, `dev-aidp` (aidp itself),
+- Templates: `dev-unity`, `review-unity`, `fix-review-unity`, `pixelart`, `art-produce`, `art-review`, `art-import`, `map-produce`,
+  `map-review`, `map-test`, `doc-write`, `doc-review` (see `docs/gamedev-content-pipelines.md`), `dev-aidp` (aidp itself),
   `dev-studio` (the `aidp-studio` front), `knowledge-init`, the fragments `knowledge-read`,
   `knowledge-update` and `review`, and the demo `dev-exemple`. Flow: `perso-delivery`.
 - Disk: nothing is installed on C:. Skill `D:\AIDP\skill` (`AIDP_SKILL_ROOT`), binary `D:\AIDP\bin`,

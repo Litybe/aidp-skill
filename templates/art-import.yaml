@@ -1,0 +1,106 @@
+version: 5
+id: art-import
+description: >
+  Gamedev route `art`, test step (replaces the Unity playtest): proves that a
+  pixel art asset of the PR works in Unity. Checks the .meta of every sprite
+  (16 pixels per unit, filter Point, no mipmap, compression none, sprite mode
+  and pivot as the project profile says; fixes them through the Unity MCP
+  only when the importer does not already apply them), places the sprite in a
+  test scene, plays the animation, captures it, and runs the compile gate
+  (contract C1, usage in unity-verify.md of unity-issue-workflow).
+
+  The Unity Editor is held by the user: the flow step that runs this pipeline
+  carries `resource: unity-editor` (contract C3; the lock is a flow concern,
+  not a stage field). Without
+  the Editor or the Unity MCP the run reports `blocked: unity-mcp`. The test
+  scene is a scratch one under Assets/Tests/Playtest/, never a gameplay
+  scene, and is not part of the PR unless the issue asks for it.
+
+  Outputs read by the flow (contract C4): result.json {passed, report} and
+  the Markdown report report.md, with the captures, in the stage dir.
+inputs:
+  issue: { required: false, kind: string, default: "", description: "GitHub issue number; its linked PR holds the asset." }
+  pr: { required: false, kind: string, default: "", description: "PR number. Empty: the PR linked to `issue`, else the open PR of the current branch." }
+  scene: { required: false, kind: string, default: "Assets/Tests/Playtest/ArtImport.unity", description: "Scratch test scene where the sprite is placed." }
+  feature: { required: false, kind: string, description: "Ticket label; names the vault run folder." }
+settings:
+  knowledge_graph:
+    enabled: false
+stages:
+  - name: prepare
+    agent: executor
+    model: haiku
+    scope: { mode: stage_dir_only }
+    policy:
+      - "Never ask the user a question. Decide open points yourself and record them as assumptions."
+      - "Read only: no commit, no push, no branch switch, no GitHub write."
+    inputs:
+      issue: "{{ inputs.issue }}"
+      pr: "{{ inputs.pr }}"
+    with:
+      instructions: >
+        (1) The working directory must hold Assets/ and ProjectSettings/;
+        otherwise blocked. (2) The PR (`pr`, else the one linked to `issue`,
+        else the open PR of the current branch; none: blocked) and its files
+        (`rtk gh pr view <pr> --json number,files,headRefName`). The branch
+        must be checked out in the working directory (the flow does it);
+        otherwise blocked. (3) List the sprite assets of the PR (.png /
+        .aseprite under Assets/), their .meta, and the animation clips or
+        controllers when present, and read the asset requirements of the
+        issue (names, tags, frame counts, ms). Write context.json: pr, issue,
+        branch, sprites (list of {path, meta, tags, frames, expected}), clips.
+    outputs: [context.json]
+
+  - name: import
+    agent: executor
+    model: sonnet
+    needs: [prepare]
+    scope: { mode: repo_wide }
+    policy:
+      - "Never ask the user a question. Drive the Editor through the Unity MCP and the file bridge; no computer use."
+      - "Never edit a gameplay scene, prefab or script. Only the scratch test scene and the .meta of the PR's sprites may change; list every change in the report."
+      - "Never commit or push, never switch branch. Leave the Editor in Edit Mode."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      scene: "{{ inputs.scene }}"
+      task: >
+        (1) Compile gate C1 first (Aidp.Playtest.Editor.CompileGate.Request
+        through Unity_RunCommand, then the result file under
+        .aidp/compile/results/; usage in unity-verify.md); not ok: failed with
+        the errors. (2) For each sprite of `context`: .meta pixelsPerUnit 16,
+        filterMode Point (0), mipmaps off, textureCompression None, sprite mode
+        and pivot as mcp__aseprite__project_profile / unity_validate say; a
+        wrong value is fixed through the Unity MCP (importer settings) and
+        noted. (3) Build or open `scene`, place each sprite in a
+        SpriteRenderer (sorting layer of the project), and for an animated
+        asset a clip or Animancer player on its tags; enter Play Mode, let each
+        animation play at least two loops (check frame durations and loop),
+        capture the Game view (Unity_Camera_Capture) at 1x and zoomed into the
+        stage dir, check there is no console error or warning from the asset
+        (Unity_ReadConsole), exit Play Mode. Missing Unity MCP or Editor: write
+        import.json with blocked "unity-mcp". Write import.json: compile
+        {ok, errors, durationMs}, blocked (null or reason), sprites: per sprite
+        {path, meta: {ppu, filter, mipmaps, compression, pivot, ok, fixed},
+        played: {tag, frames, ms, loops, ok}, captures, console}.
+    outputs: [import.json]
+
+  - name: report
+    agent: executor
+    model: haiku
+    needs: [import]
+    scope: { mode: stage_dir_only }
+    policy:
+      - "No GitHub write, no commit, no push."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      import: "{{ stages.import.outputs.import }}"
+    with:
+      instructions: >
+        Write result.json: {"passed": <true only when the compile gate was ok,
+        every sprite meta ok (after fix) and every animation played without
+        console error>, "pr": <n>, "failed": [<short reasons>], "report":
+        "report.md", "blocked": <reason or null>}. Write report.md: the
+        compile gate result (errors, duration), a table per sprite (meta
+        values, fixed or not, animation played, captures), the console, and
+        the Editor changes made (meta fixes, scratch scene).
+    outputs: [result.json, report.md]

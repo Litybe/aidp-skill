@@ -128,6 +128,9 @@ fragilités d'origine : voir le plan de conception.)
 | `review-unity` | revue Unity de toute l'issue sur la PR (une review GitHub) |
 | `fix-review-unity` | corrige les commentaires de review, rejoue le playtest, passe la PR en ready |
 | `pixelart` | brief, génération Pixellab, animation, revue notée, retouche, export Unity |
+| `art-produce`, `art-review`, `art-import` | route art : production (brief, Pixellab 10 générations max, animation, correction, PR draft), revue avocat du diable, import Unity |
+| `map-produce`, `map-review`, `map-test` | route map : graphe validé, salles LDtk, métriques et rendus, PR draft ; revue (solvabilité, sauts, BIBLE) ; test d'import et de traversée en Unity |
+| `doc-write`, `doc-review` | route doc : BIBLE et `Docs/` cohérents avec le canon, revue (détail : `docs/gamedev-content-pipelines.md`) |
 | `dev-aidp` | fait évoluer `aidp` lui-même (workspace Rust, règles de son `AGENTS.md`) |
 | `dev-studio` | fait évoluer `aidp-studio`, le front du daemon (Vite, React, TypeScript strict) |
 | `knowledge-init` | construit la base de connaissance d'un projet dans le vault |

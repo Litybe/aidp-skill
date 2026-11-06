@@ -15,7 +15,8 @@ description: >
   Then the criteria of the issue, one by one, with proof (file, line).
 
   No Unity, no git write, no edit. Outputs read by the flow (contract C4):
-  verdict.json {verdict: done | need-fix, ...}, findings.json {findings,
+  result.json {verdict, findings} (contract C9, mirrored in
+  signals), verdict.json {verdict: done | need-fix, ...}, findings.json {findings,
   fix_needed} and the Markdown report review.md in the stage dir.
 inputs:
   issue: { required: false, kind: string, default: "", description: "GitHub issue number; its linked PR is reviewed." }
@@ -102,4 +103,10 @@ stages:
         else "done", "fix_needed": <bool>, "pr": <n>, "round": <n>,
         "blocking": <n>, "findings": <count>, "criteria_total": <n>,
         "criteria_done": <n>, "next": "fix" when need-fix else "merge"}.
-    outputs: [verdict.json]
+        Also write result.json, the file the flows read (contract C9, flat
+        object): {"verdict": "done|need-fix" (the verdict.json one),
+        "findings": <the findings array of findings.json, or its path when it
+        has more than 50 entries>}. Mirror verdict and findings (a count) as
+        signals of the reply envelope. Status blocked: the reason goes in
+        signals.blocked_reason.
+    outputs: [verdict.json, result.json]

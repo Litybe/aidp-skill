@@ -17,7 +17,9 @@ description: >
   a balance under the reserve: the run reports blocked (pixellab skill,
   scripts/rotate_secret.py, then resume).
 
-  Outputs read by the flow (contract C4): pr.json {pr, branch, summary}, plus
+  Outputs read by the flow (contracts C4 and C9): result.json {pr, branch,
+  summary} of the report stage (mirrored in signals; pr.json keeps the
+  details), plus
   findings.json with signals.fix_needed for the loop. Stage ids are the C5
   ones (prepare, brief, generate, animate, fix, report); the model policy of
   the daemon overrides the models written here.
@@ -258,5 +260,10 @@ stages:
         generate, animate and fix) out of max_cost, then `Closes #<issue>`
         when context.issue is set. (3) Write pr.json {"pr": <number>,
         "branch": "<branch>", "summary": "<one sentence>", "url": "<url>",
-        "generations": <n>}.
-    outputs: [pr.json]
+        "generations": <n>}. Also write result.json, the file
+        the flows read (contract C9, flat object): {"pr": <PR number>,
+        "branch": "<branch>", "summary": "<one or two sentences: what was
+        produced, what is left>"}. Mirror pr, branch and summary as signals
+        of the reply envelope. Status blocked: the reason goes in
+        signals.blocked_reason.
+    outputs: [pr.json, result.json]

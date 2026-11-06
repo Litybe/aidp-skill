@@ -130,6 +130,25 @@ Aucun Unity ; la PR reste en draft (`ready` et fusion = le flow). Jamais d'assou
 - Sortie : `result.json` `{pr, branch, summary, pushed}` ; `fix.json` porte le détail. Aucun constat
   ouvert : `pushed: false`, rien posté.
 
+## Flows : qui appelle quoi
+
+Quatre flows natifs dans `templates/flows/` (`game-code` pour les pipelines `unity-*`). Même forme :
+claim (`aidp:in-progress`) → `git.worktree` → `git.branch` → produire (`pushes: true`) → boucle revue
+(2 tours : `aidp:review`, pipeline de revue, `gh.issue_comment` du verdict, correction si
+`verdict == 'need-fix'`) → boucle test (2 tours : `aidp:testing`, test, commentaire, correction avec
+`report_from: test` si `passed == false`) → `gh.pr_ready` → `aidp:awaiting-merge` → `merge_approval`
+humain → `gh.merge` → `aidp:done` → `worktree.remove`.
+
+| Flow | Produire | Revue ⇄ correction | Test ⇄ correction | Verrou `unity-editor` |
+|---|---|---|---|---|
+| `game-art` | `art-produce` | `art-review` ⇄ `art-fix` | `art-import` ⇄ `art-fix` | sur `art-import` seul |
+| `game-map` | `map-produce` | `map-review` ⇄ `map-fix` | `map-test` ⇄ `map-fix` | sur `map-test` seul |
+| `game-doc` | `doc-write` | `doc-review` ⇄ `doc-fix` | aucun | aucun |
+
+Boucle épuisée : label `aidp:blocked`, puis l'action `fail` termine le run. La revue seule ne tient
+pas l'éditeur ; le verrou (C3) est posé par l'étape du flow, jamais par le template. Les labels sont
+posés par `gh.issue_label`, les rapports par `gh.issue_comment` avec `cost_footer: true`.
+
 ## Écarts connus
 
-- `resource: unity-editor` (C3) n'est pas un champ de stage : à poser sur l'étape de flow.
+- `resource: unity-editor` (C3) n'est pas un champ de stage : posé sur les étapes de flow (game-art : art-import ; game-map : map-test).

@@ -69,7 +69,8 @@ stages:
         thread|review-point|test-ko, ref, text, severity, file, line}],
         open_items, has_open_items, open_blocking (items of severity
         bloquant) and config.
-    outputs: [context.json]
+        Memory (contract C10, templates/recipes/memory.md of the skill): with the issue number, run `rtk aidp memory context --project "<projectRoot>" --issue GH-<issue> --route code --stage fix --budget 2000` (without an issue, drop `--issue`) and save its output as memory-context.md in your stage dir, unchanged; if the command fails, write memory-context.md holding only « Mémoire indisponible : <cause> » and go on. Read the BIBLE by its index (00_INDEX) and get any passage you need with `rtk aidp rag search "<query>" --project "<projectRoot>" --source bible --budget 1500`, never whole.
+    outputs: [context.json, memory-context.md]
 
   - name: fix
     agent: unity-review-fixer
@@ -78,11 +79,14 @@ stages:
     needs: [prepare]
     scope: { mode: repo_wide }
     policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
+      - "Memory proposals: write memory-proposals.json (`{\"proposals\": []}` when nothing qualifies), 5 max, non-obvious reusable lessons only, as templates/recipes/memory.md §3 says."
       - "The PR exists: never open a new one, never merge, never mark it ready."
       - "The Unity Editor stays open: never run Unity in batchmode, never close it, never change branch."
       - "Never weaken, skip or delete a test or a PlaytestDriver scenario to make it pass; a scenario that is wrong is fixed only with the evidence in the report and said in the summary."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"
+      memory: "{{ stages.prepare.outputs.memory-context }}"
       task: >
         `context.has_open_items` false: nothing to fix. Write fix.json with
         pushed false, commits [], items [], touched [], write result.json
@@ -115,4 +119,4 @@ stages:
         "<PR head>", "summary": "<two sentences: what was fixed, what is
         left>", "pushed": <bool>, "items_fixed": <n>, "items_open": <n>}.
         Mirror pushed, items_fixed, items_open, open_blocking as signals.
-    outputs: [fix.json, result.json]
+    outputs: [fix.json, result.json, memory-proposals.json]

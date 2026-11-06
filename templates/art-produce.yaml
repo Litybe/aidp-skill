@@ -65,7 +65,8 @@ stages:
         branch (`git switch -c`); reuse it when it exists. Never touch the
         base branch. (4) Write context.json: repo, projectRoot, baseBranch,
         branch, issue (number or null), title, request, criteria (list).
-    outputs: [context.json]
+        Memory (contract C10, templates/recipes/memory.md of the skill): with the issue number, run `rtk aidp memory context --project "<projectRoot>" --issue GH-<issue> --route art --stage brief --budget 2000` (without an issue, drop `--issue`) and save its output as memory-context.md in your stage dir, unchanged; if the command fails, write memory-context.md holding only « Mémoire indisponible : <cause> » and go on. Read the BIBLE by its index (00_INDEX) and get any passage you need with `rtk aidp rag search "<query>" --project "<projectRoot>" --source bible --budget 1500`, never whole.
+    outputs: [context.json, memory-context.md]
 
   - name: brief
     description: Art direction - production brief, palette ramps, animation plan, priced Pixellab plan, acceptance criteria.
@@ -75,12 +76,14 @@ stages:
     skills: [pixellab, pixel-art, pixel-palette, pixel-animation, pixel-character, pixel-tileset]
     scope: { mode: stage_dir_only }
     policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Never ask the user a question; decide open points and record them as assumptions."
       - "No paid Pixellab call and no sprite edit: only free tools (get_balance, get_pro_flash_capabilities, get_*, pixelart_workbench inspect/score)."
       - "The priced plan must fit max_cost (10 generations per issue unless the input says otherwise); if even the minimal plan does not, report blocked with the cheapest viable plan."
       - "Write pixellab-usage.json (contract C6) with the raw get_balance answer as balanceBefore and balanceAfter, generations 0, jobs [], recordedAt."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"
+      memory: "{{ stages.prepare.outputs.memory-context }}"
       asset_kind: "{{ inputs.asset_kind }}"
       source: "{{ inputs.source }}"
       style_ref: "{{ inputs.style_ref }}"
@@ -107,6 +110,7 @@ stages:
     skills: [pixellab, pixel-art, pixel-palette, pixel-character, pixel-tileset]
     scope: { mode: production }
     policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Never ask the user a question; decide open points and record them as assumptions. max_cost is the approval: no cost confirmation is needed below it."
       - "Use the brief's Pixellab plan and the pixellab skill's best tools; never standard, pixflux, bitforge or legacy endpoints."
       - "Price every call before submitting it; never exceed max_cost in total. Wait with wait_for_jobs; retry a failed or unusable job at most once."
@@ -115,6 +119,7 @@ stages:
       - "Write pixellab-usage.json (C6) in your stage dir: balanceBefore and balanceAfter (raw get_balance answers), generations (spent by this stage, 0 if none), jobs, recordedAt. Ceiling: 10 generations per issue, all stages together."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"
+      memory: "{{ stages.prepare.outputs.memory-context }}"
       brief: "{{ stages.brief.outputs.brief }}"
       asset_kind: "{{ inputs.asset_kind }}"
       source: "{{ inputs.source }}"
@@ -138,11 +143,13 @@ stages:
     skills: [pixel-animation, pixellab, pixel-art, pixel-palette]
     scope: { mode: production }
     policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Never ask the user a question; record choices as assumptions."
       - "Static asset_kind (no _animation suffix): write asset.json from generation.json with animated false and call no tool."
       - "Spend only what is left of max_cost after the generate stage (its pixellab-usage.json says how much). Every animation ends on the palette, with ms timings, holds, a stable anchor and a clean loop."
       - "Write pixellab-usage.json (C6) in your stage dir: balanceBefore and balanceAfter (raw get_balance answers), generations (spent by this stage, 0 if none), jobs, recordedAt. Ceiling: 10 generations per issue, all stages together."
     inputs:
+      memory: "{{ stages.prepare.outputs.memory-context }}"
       brief: "{{ stages.brief.outputs.brief }}"
       generation: "{{ stages.generate.outputs.generation }}"
       generate_usage: "{{ stages.generate.outputs.pixellab-usage }}"
@@ -164,9 +171,11 @@ stages:
     skills: [pixel-review, pixel-animation, pixel-palette, pixellab]
     scope: { mode: stage_dir_only }
     policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Read only: never modify the sprite, never call a paid Pixellab tool."
       - "Finding defects is success: reply completed once findings.json is written and re-read."
     inputs:
+      memory: "{{ stages.prepare.outputs.memory-context }}"
       brief: "{{ stages.brief.outputs.brief }}"
       asset: "{{ stages.animate.outputs.asset }}"
       asset_kind: "{{ inputs.asset_kind }}"
@@ -237,10 +246,12 @@ stages:
     needs: [correction]
     scope: { mode: repo_wide }
     policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Never ask the user a question. No Pixellab call. Never merge, never mark the PR ready."
       - "Commit only the asset files (.aseprite, exported sheet / PNG / JSON, .meta, previews) on the working branch; never the base branch."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"
+      memory: "{{ stages.prepare.outputs.memory-context }}"
       brief: "{{ stages.brief.outputs.brief }}"
       asset: "{{ stages.animate.outputs.asset }}"
       findings: "{{ stages.verify.outputs.findings }}"

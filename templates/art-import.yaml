@@ -49,7 +49,8 @@ stages:
         controllers when present, and read the asset requirements of the
         issue (names, tags, frame counts, ms). Write context.json: pr, issue,
         branch, sprites (list of {path, meta, tags, frames, expected}), clips.
-    outputs: [context.json]
+        Memory (contract C10, templates/recipes/memory.md of the skill): with the issue number, run `rtk aidp memory context --project "<projectRoot>" --issue GH-<issue> --route art --stage import --budget 2000` (without an issue, drop `--issue`) and save its output as memory-context.md in your stage dir, unchanged; if the command fails, write memory-context.md holding only « Mémoire indisponible : <cause> » and go on. Read the BIBLE by its index (00_INDEX) and get any passage you need with `rtk aidp rag search "<query>" --project "<projectRoot>" --source bible --budget 1500`, never whole.
+    outputs: [context.json, memory-context.md]
 
   - name: import
     agent: executor
@@ -57,11 +58,13 @@ stages:
     needs: [prepare]
     scope: { mode: repo_wide }
     policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Never ask the user a question. Drive the Editor through the Unity MCP and the file bridge; no computer use."
       - "Never edit a gameplay scene, prefab or script. Only the scratch test scene and the .meta of the PR's sprites may change; list every change in the report."
       - "Never commit or push, never switch branch. Leave the Editor in Edit Mode."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"
+      memory: "{{ stages.prepare.outputs.memory-context }}"
       scene: "{{ inputs.scene }}"
       task: >
         (1) Compile gate C1 first (Aidp.Playtest.Editor.CompileGate.Request
@@ -90,9 +93,12 @@ stages:
     needs: [import]
     scope: { mode: stage_dir_only }
     policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
+      - "Memory proposals: write memory-proposals.json (`{\"proposals\": []}` when nothing qualifies), 5 max, non-obvious reusable lessons only, as templates/recipes/memory.md §3 says."
       - "No GitHub write, no commit, no push."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"
+      memory: "{{ stages.prepare.outputs.memory-context }}"
       import: "{{ stages.import.outputs.import }}"
     with:
       instructions: >
@@ -105,4 +111,4 @@ stages:
         compile gate result (errors, duration), a table per sprite (meta
         values, fixed or not, animation played, captures), the console, and
         the Editor changes made (meta fixes, scratch scene).
-    outputs: [result.json, report.md]
+    outputs: [result.json, report.md, memory-proposals.json]

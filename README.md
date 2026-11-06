@@ -134,6 +134,7 @@ fragilités d'origine : voir le plan de conception.)
 | `pixelart` | brief, génération Pixellab, animation, revue notée, retouche, export Unity |
 | `art-produce`, `art-review`, `art-import` | route art : production (brief, Pixellab 10 générations max, animation, correction, PR draft), revue avocat du diable, import Unity |
 | `map-produce`, `map-review`, `map-test` | route map : graphe validé, salles LDtk, métriques et rendus, PR draft ; revue (solvabilité, sauts, BIBLE) ; test d'import et de traversée en Unity |
+| `art-fix`, `map-fix`, `doc-fix` | corrigent la PR après une revue (`report_from: review`) ou un test (`test`, art et map), push, `result.json` `{pr, branch, summary, pushed}` |
 | `doc-write`, `doc-review` | route doc : BIBLE et `Docs/` cohérents avec le canon, revue (détail : `docs/gamedev-content-pipelines.md`) |
 | `dev-aidp` | fait évoluer `aidp` lui-même (workspace Rust, règles de son `AGENTS.md`) |
 | `dev-studio` | fait évoluer `aidp-studio`, le front du daemon (Vite, React, TypeScript strict) |

@@ -1,30 +1,35 @@
 # Pipelines de contenu gamedev : art, map, doc
 
-Lot P3 du plan gamedev. Huit templates `version: 5`, joués par le binaire `aidp` en sessions
+Lot P3 du plan gamedev. Onze templates `version: 5`, joués par le binaire `aidp` en sessions
 `claude -p` autonomes, appelés par les flows `game-art`, `game-map`, `game-doc`
 (plan `PLAN-GAMEDEV.md` §3.1, §4.2). Les pipelines `unity-*` et `issue-refine` sont décrits
 ailleurs ; le contrat d'usage du compile gate C1 et des scénarios C2 est dans `unity-verify.md`
 (skill `unity-issue-workflow`).
 
-| Route | Produire | Revue | Test |
-|---|---|---|---|
-| `art` | `art-produce` | `art-review` | `art-import` |
-| `map` | `map-produce` | `map-review` | `map-test` |
-| `doc` | `doc-write` | `doc-review` | aucun (pas d'éditeur Unity) |
+| Route | Produire | Revue | Test | Correction |
+|---|---|---|---|---|
+| `art` | `art-produce` | `art-review` | `art-import` | `art-fix` |
+| `map` | `map-produce` | `map-review` | `map-test` | `map-fix` |
+| `doc` | `doc-write` | `doc-review` | aucun (pas d'éditeur Unity) | `doc-fix` |
 
-## Sorties lues par les flows (contrat C4)
+## Sorties lues par les flows (contrats C4 et C9)
 
-Une sortie de stage est un fichier ; un flow lit un champ du JSON par
-`steps.<id>.outputs.<fichier sans extension>.<champ>`.
+Le dernier stage de chaque pipeline écrit `result.json` (objet plat, champs C4) et recopie ces
+valeurs dans les `signals` de son enveloppe. Le daemon expose chaque clé de `result.json` comme
+`steps.<id>.outputs.<clé>`, en plus des fichiers déjà exposés (`pr.json`, `verdict.json`,
+`findings.json`, `review.md`, `report.md`). Statut `blocked` : raison dans `signals.blocked_reason`.
 
-| Pipeline | Fichier | Champs |
+| Pipeline | Stage | `result.json` (champs) |
 |---|---|---|
-| `*-produce`, `doc-write` | `pr.json` (stage `report`) | `pr`, `branch`, `summary`, `url` |
-| `*-review` | `verdict.json` (stage `verdict`) | `verdict` (`done` ou `need-fix`), `fix_needed`, `blocking`, `findings` (nombre), `next` |
-| `*-review` | `findings.json` (stage `review`) | `findings` (liste), `fix_needed`, `criteria` |
-| `*-review` | `review.md` | rapport Markdown, titré « ## Revue avocat du diable — verdict : done \| need-fix » |
-| `art-import`, `map-test` | `result.json` (stage `report`) | `passed` (booléen), `report`, `blocked` |
-| `art-import`, `map-test` | `report.md` | rapport Markdown, captures dans le dossier de stage |
+| `art-produce`, `map-produce`, `doc-write` | `report` | `pr` (numéro), `branch`, `summary` |
+| `art-review`, `map-review`, `doc-review` | `verdict` | `verdict` (`done` ou `need-fix`), `findings` (liste de `findings.json`, ou son chemin au-delà de 50) |
+| `art-import`, `map-test` | `report` | `passed` (booléen), `report` (+ `pr`, `failed`, `blocked`, et `scenarios`, `not_testable` pour `map-test`) |
+| `art-fix`, `map-fix`, `doc-fix` | `fix` | `pr`, `branch`, `summary`, `pushed` |
+
+Fichiers conservés : `pr.json` (`pr`, `branch`, `summary`, `url`, …), `verdict.json` (`fix_needed`,
+`blocking`, `next`, …), `findings.json` (`findings`, `fix_needed`, `criteria`), `review.md`
+(« ## Revue avocat du diable — verdict : done \| need-fix »), `report.md`. Collision de clé :
+`steps.<id>.outputs.pr` est le numéro de `result.json`, le fichier `pr.json` passe sous `pr_file`.
 
 Ids de stage (C5) : `prepare`, `brief`, `generate`, `animate`, `fix`, `import`, `test`, `graph`,
 `rooms`, `write`, `review`, `verdict`, `report`. La politique de modèles du daemon (T5) remplace
@@ -45,7 +50,7 @@ commit, push, PR draft `Closes #n`).
   générations, tous stages confondus, est rappelé dans leur policy. Le stage `report` additionne
   les usages dans le corps de PR. Le daemon agrège et applique la réserve ; il n'appelle jamais
   Pixellab.
-- Sortie : `pr.json`. La boucle lit `stages.verify.outputs.findings.fix_needed`.
+- Sorties : `pr.json`, `result.json`. La boucle lit `stages.verify.outputs.findings.fix_needed`.
 
 ## art-review
 
@@ -53,7 +58,7 @@ Avocat du diable art, lecture seule. `prepare` (haiku : PR, critères, télécha
 la PR dans le dossier de stage) → `review` (sonnet, `pixel-reviewer` : `sprite_inspect`, `tag_list`,
 `lint` avec la palette, `anim_audit` par tag, `unity_validate`, `.meta` lu en texte : 16 PPU, Point,
 sans mipmap, compression none, conformité au brief et à la palette, défauts IA) → `verdict` (haiku).
-Entrées : `issue`, `pr`, `palette`. Sorties : `findings.json`, `review.md`, `verdict.json`.
+Entrées : `issue`, `pr`, `palette`. Sorties : `findings.json`, `review.md`, `verdict.json`, `result.json`.
 
 ## art-import
 
@@ -75,7 +80,7 @@ passe, 3 itérations par salle) → `report` (haiku : `room_metrics.py --all --g
 FAIL restant bloque la livraison. Le `.ldtk` n'est modifié que par le CLI du skill `ldtk`. La PR
 liste « À câbler dans Unity » (règles U1 à U6 de `unity-import.md`) et rappelle de rouvrir LDtk et de
 sauver (Ctrl+S). Entrées : `issue`, `prompt`, `ldtk_file`, `graph_file`. Sorties : `graph.json`,
-`rooms.json`, `metrics.txt`, `pr.json`.
+`rooms.json`, `metrics.txt`, `pr.json`, `result.json`.
 
 ## map-review
 
@@ -106,8 +111,25 @@ conservée) → `report` (haiku : commit, push, PR draft). `doc-review` : `prepa
 canon, conventions d'identifiants et marquages d'état, chiffres, structure, liens, critères) →
 `verdict`. Pas de test Unity.
 
+## art-fix, map-fix, doc-fix
+
+Correction d'une PR après une revue `need-fix` (ou un test KO). `prepare` (haiku : PR, branche,
+constats ❌/⚠️ de la dernière revue et fils non résolus, tour de correction) → `fix` (sonnet) : commit
+sur la branche de la PR, push sans force, réponse sur chaque fil, un commentaire `<route>-fix-summary`.
+Aucun Unity ; la PR reste en draft (`ready` et fusion = le flow). Jamais d'assouplissement d'un critère.
+
+- Entrées : `issue`, `pr`, `feature` ; `report_from: review|test` (défaut `review`) pour `art-fix` et
+  `map-fix` (`test` = échecs du dernier rapport `art-import` / `map-test`). `doc-fix` : revue seule.
+- `art-fix` (agent `pixel-fixer`) : corrige à la main dans Aseprite, re-mesure (`lint`, `anim_audit`,
+  `unity_validate`), exporte pour Unity ; Pixellab limité aux appels gratuits et aux nettoyages à
+  0,1 génération dans le plafond de 10 ; `pixellab-usage.json` (C6) si Pixellab est appelé.
+- `map-fix` : graphe par `map-world-design` (`validate_graph.py` à zéro FAIL), salles par
+  `map-room-design` et le CLI `ldtk` (`room_metrics.py`, rendus PNG) ; un FAIL restant bloque le push.
+- `doc-fix` : alignement sur `01_canon` puis le document propriétaire, contradiction notée dans
+  `99_revue_critique/`, coherence checks de `doc-write`.
+- Sortie : `result.json` `{pr, branch, summary, pushed}` ; `fix.json` porte le détail. Aucun constat
+  ouvert : `pushed: false`, rien posté.
+
 ## Écarts connus
 
-- Le fix après une revue `need-fix` n'a pas de template dédié dans ce lot : le flow relance la
-  production (boucle `correction` pour l'art) ou une session de correction.
 - `resource: unity-editor` (C3) n'est pas un champ de stage : à poser sur l'étape de flow.

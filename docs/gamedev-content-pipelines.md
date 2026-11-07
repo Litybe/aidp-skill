@@ -145,7 +145,7 @@ humain → `gh.merge` → `aidp:done` → `worktree.remove`.
 | `game-map` | `map-produce` | `map-review` ⇄ `map-fix` | `map-test` ⇄ `map-fix` | sur `map-test` seul |
 | `game-doc` | `doc-write` | `doc-review` ⇄ `doc-fix` | aucun | aucun |
 
-Boucle épuisée : label `aidp:blocked`, puis l'action `fail` termine le run. La revue seule ne tient
+Boucle épuisée : l'`until` de chaque boucle s'arrête aussi à `settings.max_*_rounds` (une boucle arrêtée par `max` seul escalade le run aussitôt et rien ne s'exécute après), puis label `aidp:blocked` et `fail` avec `kind: business` : le run finit `escalated` (sans `kind`, `failed`). Le dernier tour `need-fix` est corrigé mais pas re-revu : issue bloquée, un humain regarde. Le daemon passe `issue`, `track` et `route` aux pipelines (ticket GitHub) : aucun `with: { issue }` dans les flows. La revue seule ne tient
 pas l'éditeur ; le verrou (C3) est posé par l'étape du flow, jamais par le template. Les labels sont
 posés par `gh.issue_label`, les rapports par `gh.issue_comment` avec `cost_footer: true`.
 

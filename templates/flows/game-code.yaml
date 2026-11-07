@@ -2,12 +2,11 @@
 # advocate review <-> fix loop, Unity test <-> fix loop, human merge. Labels `aidp:*` are set by
 # gh.issue_label, every review and test is commented on the issue (gh.issue_comment).
 # The `unity-editor` resource serializes the steps that need the Editor (one holder at a time).
-# Start with POST /api/tickets/:key/flow {"flow": "game-code"}; track `bug` writes the repro test first.
+# Start with POST /api/tickets/:key/flow {"flow": "game-code"}; the ticket track (`bug` writes the repro test first) reaches the pipelines by itself.
 id: game-code
 version: 1
 inputs:
   ticket: { required: true }
-  track: { required: false, default: standard }
 settings:
   max_review_rounds: 2
   max_test_rounds: 2
@@ -21,12 +20,11 @@ steps:
     phase: Réalisation
     pushes: true
     resource: unity-editor
-    with: { track: "{{ inputs.track }}" }
   - id: review_loop
     kind: loop
     phase: Revue
     max: 2
-    until: "steps.review.outputs.verdict == 'done'"
+    until: "steps.review.outputs.verdict == 'done' || !(steps.review_loop.iteration < settings.max_review_rounds)"
     body:
       - { id: review_label, kind: action, use: gh.issue_label, with: { state: review } }
       - { id: review, kind: pipeline, use: unity-review, pushes: false }
@@ -48,12 +46,12 @@ steps:
     phase: Revue
     when: "steps.review.outputs.verdict != 'done'"
     with: { state: blocked }
-  - { id: review_escalate, kind: action, use: fail, phase: Revue, when: "steps.review.outputs.verdict != 'done'" }
+  - { id: review_escalate, kind: action, use: fail, phase: Revue, with: { kind: business, message: "Revue épuisée : issue bloquée" }, when: "steps.review.outputs.verdict != 'done'" }
   - id: test_loop
     kind: loop
     phase: Test Unity
     max: 2
-    until: "steps.test.outputs.passed == true"
+    until: "steps.test.outputs.passed == true || !(steps.test_loop.iteration < settings.max_test_rounds)"
     body:
       - { id: test_label, kind: action, use: gh.issue_label, with: { state: testing } }
       - { id: test, kind: pipeline, use: unity-test, pushes: true, resource: unity-editor }
@@ -69,6 +67,8 @@ steps:
         resource: unity-editor
         when: "steps.test.outputs.passed == false"
         with: { report_from: test }
+  - { id: test_exhausted, kind: action, use: gh.issue_label, with: { state: blocked }, phase: Test Unity, when: "steps.test.outputs.passed != true" }
+  - { id: test_escalate, kind: action, use: fail, phase: Test Unity, with: { kind: business, message: "Test épuisé : issue bloquée" }, when: "steps.test.outputs.passed != true" }
   - { id: ready, kind: action, use: gh.pr_ready, phase: Merge }
   - { id: await, kind: action, use: gh.issue_label, with: { state: awaiting-merge }, phase: Merge }
   - { id: merge_approval, kind: human, phase: Merge, prompt: "Merger la PR ?", choices: [approve] }

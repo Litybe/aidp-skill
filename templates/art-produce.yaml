@@ -1,0 +1,280 @@
+version: 5
+id: art-produce
+description: >
+  Gamedev route `art`, produce step: one GitHub issue that describes a pixel
+  art asset becomes a draft PR with the asset. Stages: prepare (issue, branch),
+  brief (pixel-art-director), generate (pixel-artist, Pixellab), animate
+  (pixel-animator), verify (pixel-reviewer) and a correction loop
+  (pixel-fixer + recheck, two rounds at most), then report (commit, push,
+  draft PR `Closes #n`). Derived from `pixelart`, which stays as is.
+
+  Pixellab budget: at most 10 generations per issue (input max_cost, the
+  user's approval). Every stage that calls Pixellab (brief, generate, animate,
+  fix) writes `pixellab-usage.json` in its stage dir (contract C6:
+  balanceBefore, balanceAfter, generations, jobs, recordedAt); the daemon
+  aggregates it per run and per ticket and holds the minimum reserve. The
+  daemon never calls Pixellab: no secret on its side. Lack of generations or
+  a balance under the reserve: the run reports blocked (pixellab skill,
+  scripts/rotate_secret.py, then resume).
+
+  Outputs read by the flow (contracts C4 and C9): result.json {pr, branch,
+  summary} of the report stage (mirrored in signals; pr.json keeps the
+  details), plus
+  findings.json with signals.fix_needed for the loop. Stage ids are the C5
+  ones (prepare, brief, generate, animate, fix, report); the model policy of
+  the daemon overrides the models written here.
+
+  Needs the MCP servers `pixellab` and `aseprite`, the skills `pixellab`,
+  `pixel-art`, `pixel-palette`, `pixel-character`, `pixel-animation`,
+  `pixel-tileset` and `pixel-review`, and the agents pixel-art-director,
+  pixel-artist, pixel-animator, pixel-reviewer and pixel-fixer under
+  ~/.claude/agents. Palette Rosy 42 by default.
+inputs:
+  issue: { required: false, kind: string, default: "", description: "GitHub issue number describing the asset; the PR will close it (`Closes #n`)." }
+  prompt: { required: false, kind: string, default: "", description: "What to produce: subject, style, pose, mood, motion. Empty: taken from the issue body." }
+  asset_kind: { required: false, kind: enum, values: [item, item_animation, character, character_animation, ui, ui_animation, tileset, tileset_animation, map_assets, image], default: character, description: "Need to cover; selects the Pixellab tools (pixellab skill table) and the review rubric." }
+  source: { required: false, kind: string, default: "", description: "Existing asset to start from or animate: a Pixellab ref (character:<id>, object:<id>, tileset:<id>, job:<id>, gallery:<id>) or a PNG path in the project. Empty: generate from the prompt." }
+  style_ref: { required: false, kind: string, default: "", description: "Style anchor reused for consistency (validated asset ref or PNG path). Empty: none, or the first asset of the run." }
+  view: { required: false, kind: enum, values: [side, low top-down, high top-down], default: side, description: "Camera view; side for the platformer projects." }
+  size: { required: false, kind: string, default: "", description: "Canvas / tile size (e.g. 32x32, tile 16). Empty: take it from mcp__aseprite__project_profile." }
+  palette: { required: false, kind: string, default: "rosy-42", description: "Palette name in the pixellab skill assets/ (<name>.json, .gpl, .dataurl.txt) or a .gpl/.hex path. Every pixel must end on it." }
+  max_cost: { required: false, kind: int, default: 10, description: "Ceiling of Pixellab generations for this issue (user approval). Above it, stop and report blocked." }
+  feature: { required: false, kind: string, description: "Asset or ticket label; names the vault run folder." }
+settings:
+  knowledge_graph:
+    enabled: false
+stages:
+  - name: prepare
+    agent: executor
+    model: haiku
+    scope: { mode: repo_wide }
+    policy:
+      - "Never ask the user a question. Decide open points yourself and record them as assumptions."
+      - "No Pixellab call, no sprite edit. The only repository write is creating the working branch."
+    inputs:
+      issue: "{{ inputs.issue }}"
+      prompt: "{{ inputs.prompt }}"
+    with:
+      instructions: >
+        (1) `rtk gh repo view --json nameWithOwner,defaultBranchRef`. (2) When
+        `issue` is set, `rtk gh issue view <n> --json title,body,labels`; the
+        asset request is `prompt` when set, else the issue body (keep its
+        CA-n criteria, sizes, frame counts, durations, files, BIBLE notes). (3)
+        Branch: the current branch when it is not the base branch (the flow
+        already made it), else `art/<issue>-<slug>` created from the base
+        branch (`git switch -c`); reuse it when it exists. Never touch the
+        base branch. (4) Write context.json: repo, projectRoot, baseBranch,
+        branch, issue (number or null), title, request, criteria (list).
+        Memory (contract C10, templates/recipes/memory.md of the skill): with the issue number, run `rtk aidp memory context --project "<projectRoot>" --issue GH-<issue> --route art --stage brief --budget 2000` (without an issue, drop `--issue`) and save its output as memory-context.md in your stage dir, unchanged; if the command fails, write memory-context.md holding only « Mémoire indisponible : <cause> » and go on. Read the BIBLE by its index (00_INDEX) and get any passage you need with `rtk aidp rag search "<query>" --project "<projectRoot>" --source bible --budget 1500`, never whole.
+    outputs: [context.json, memory-context.md]
+
+  - name: brief
+    description: Art direction - production brief, palette ramps, animation plan, priced Pixellab plan, acceptance criteria.
+    agent: pixel-art-director
+    model: opus
+    needs: [prepare]
+    skills: [pixellab, pixel-art, pixel-palette, pixel-animation, pixel-character, pixel-tileset]
+    scope: { mode: stage_dir_only }
+    policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
+      - "Never ask the user a question; decide open points and record them as assumptions."
+      - "No paid Pixellab call and no sprite edit: only free tools (get_balance, get_pro_flash_capabilities, get_*, pixelart_workbench inspect/score)."
+      - "The priced plan must fit max_cost (10 generations per issue unless the input says otherwise); if even the minimal plan does not, report blocked with the cheapest viable plan."
+      - "Write pixellab-usage.json (contract C6) with the raw get_balance answer as balanceBefore and balanceAfter, generations 0, jobs [], recordedAt."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      memory: "{{ stages.prepare.outputs.memory-context }}"
+      asset_kind: "{{ inputs.asset_kind }}"
+      source: "{{ inputs.source }}"
+      style_ref: "{{ inputs.style_ref }}"
+      view: "{{ inputs.view }}"
+      size: "{{ inputs.size }}"
+      palette: "{{ inputs.palette }}"
+      max_cost: "{{ inputs.max_cost }}"
+    with:
+      instructions: >
+        Write brief.json and art-brief.md as your agent definition says: use
+        in game and background, view, canvas / tile size, palette ramps per
+        material picked from the palette, light, outline, colour budget,
+        silhouette and focal point, the pose-by-pose animation plan with ms
+        per frame when asset_kind ends with _animation, the Pixellab plan
+        (tool, parameters, exact English prompt, seed, cost) and the
+        acceptance criteria of pixellab/references/pro-standards.md.
+    outputs: [brief.json, art-brief.md, pixellab-usage.json]
+
+  - name: generate
+    description: Generate the base asset with the best Pixellab tool, lock it on the palette and import it into Aseprite.
+    agent: pixel-artist
+    model: opus
+    needs: [brief]
+    skills: [pixellab, pixel-art, pixel-palette, pixel-character, pixel-tileset]
+    scope: { mode: production }
+    policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
+      - "Never ask the user a question; decide open points and record them as assumptions. max_cost is the approval: no cost confirmation is needed below it."
+      - "Use the brief's Pixellab plan and the pixellab skill's best tools; never standard, pixflux, bitforge or legacy endpoints."
+      - "Price every call before submitting it; never exceed max_cost in total. Wait with wait_for_jobs; retry a failed or unusable job at most once."
+      - "Pass images as references (upload:, URLs, character:/object:/job:), never long base64; read palette data URLs from the assets file."
+      - "No hand pixel edits in this stage except format fixes (canvas, tags, import)."
+      - "Write pixellab-usage.json (C6) in your stage dir: balanceBefore and balanceAfter (raw get_balance answers), generations (spent by this stage, 0 if none), jobs, recordedAt. Ceiling: 10 generations per issue, all stages together."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      memory: "{{ stages.prepare.outputs.memory-context }}"
+      brief: "{{ stages.brief.outputs.brief }}"
+      asset_kind: "{{ inputs.asset_kind }}"
+      source: "{{ inputs.source }}"
+      max_cost: "{{ inputs.max_cost }}"
+    with:
+      instructions: >
+        Produce the static base of the asset (for an *_animation kind: the
+        item, character, UI element or tile to animate; reuse source when
+        given). Check every result (inspect, score, lint, AI defects), lock
+        the palette (reduce_colors + save_to_asset) when off-palette or score
+        < 85, download into the stage dir, import into an .aseprite in the
+        project's sprite folder with the palette .gpl loaded, and write
+        generation.json.
+    outputs: [generation.json, pixellab-usage.json]
+
+  - name: animate
+    description: Animate the asset per the brief (Pixellab + Aseprite timing); pass-through for a static asset.
+    agent: pixel-animator
+    model: opus
+    needs: [generate]
+    skills: [pixel-animation, pixellab, pixel-art, pixel-palette]
+    scope: { mode: production }
+    policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
+      - "Never ask the user a question; record choices as assumptions."
+      - "Static asset_kind (no _animation suffix): write asset.json from generation.json with animated false and call no tool."
+      - "Spend only what is left of max_cost after the generate stage (its pixellab-usage.json says how much). Every animation ends on the palette, with ms timings, holds, a stable anchor and a clean loop."
+      - "Write pixellab-usage.json (C6) in your stage dir: balanceBefore and balanceAfter (raw get_balance answers), generations (spent by this stage, 0 if none), jobs, recordedAt. Ceiling: 10 generations per issue, all stages together."
+    inputs:
+      memory: "{{ stages.prepare.outputs.memory-context }}"
+      brief: "{{ stages.brief.outputs.brief }}"
+      generation: "{{ stages.generate.outputs.generation }}"
+      generate_usage: "{{ stages.generate.outputs.pixellab-usage }}"
+      asset_kind: "{{ inputs.asset_kind }}"
+      max_cost: "{{ inputs.max_cost }}"
+    with:
+      instructions: >
+        Follow the brief's animation plan: Pixellab animation with the best
+        mode, palette lock of all frames in one reduce_colors call, then
+        Aseprite finishing (tags, per-frame ms, holds, anchor, anti-boil,
+        loop, control GIF). Write asset.json.
+    outputs: [asset.json, pixellab-usage.json]
+
+  - name: verify
+    description: Scored studio-level review of the asset against the brief and the pro standards.
+    agent: pixel-reviewer
+    model: opus
+    needs: [animate]
+    skills: [pixel-review, pixel-animation, pixel-palette, pixellab]
+    scope: { mode: stage_dir_only }
+    policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
+      - "Read only: never modify the sprite, never call a paid Pixellab tool."
+      - "Finding defects is success: reply completed once findings.json is written and re-read."
+    inputs:
+      memory: "{{ stages.prepare.outputs.memory-context }}"
+      brief: "{{ stages.brief.outputs.brief }}"
+      asset: "{{ stages.animate.outputs.asset }}"
+      asset_kind: "{{ inputs.asset_kind }}"
+    with:
+      instructions: >
+        Measure (sprite_inspect, sprite_stats, lint with the palette, anim_audit
+        per tag, unity_validate, workbench score), look (1x on the game
+        background, zoomed grid, strip/onion/diff for animations), score the
+        grid, hunt the AI defects, and write findings.json (with verdict) and
+        verify.md. Mirror verdict.fix_needed as the strict boolean
+        signals.fix_needed: the correction loop reads it there.
+    outputs: [findings.json, verify.md]
+
+  # Hand correction then recheck, up to two rounds, while the review says fix_needed (signals.fix_needed).
+  # recheck replaces verify's result; still fix_needed after two rounds -> the run pauses for a human.
+  - name: correction
+    type: loop
+    when: "{{ stages.verify.outputs.findings.fix_needed }}"
+    max_iterations: 2
+    body:
+      - name: fix
+        agent: pixel-fixer
+        model: opus
+        skills: [pixel-review, pixel-art, pixel-palette, pixel-animation, pixel-character, pixel-tileset, pixellab]
+        scope: { mode: production }
+        policy:
+          - "Correct by hand with the Aseprite MCP, in the existing style, on the palette; never rescale, blur or filter."
+          - "Allowed Pixellab calls: free ones (pixelart_workbench, save_to_asset, get_*) and 0.1-generation cleanups within what is left of max_cost. No new generation."
+          - "Write pixellab-usage.json (C6) in your stage dir: balanceBefore and balanceAfter (raw get_balance answers), generations (spent by this stage, 0 if none), jobs, recordedAt. Ceiling: 10 generations per issue, all stages together."
+          - "Fix findings from blocking to minor; skip one only with a written reason."
+        inputs:
+          brief: "{{ stages.brief.outputs.brief }}"
+          asset: "{{ stages.animate.outputs.asset }}"
+          findings: "{{ stages.verify.outputs.findings }}"
+          max_cost: "{{ inputs.max_cost }}"
+          usage: "{{ stages.animate.outputs.pixellab-usage }}"
+        with:
+          instructions: >
+            Fix each finding with the tool it names, re-measure, export for
+            Unity (sheet + JSON, pivot/slices per the profile, control GIFs),
+            save the corrected frames back to Pixellab, and write fix.json.
+        outputs: [fix.json, pixellab-usage.json]
+      - name: recheck
+        agent: pixel-reviewer
+        model: sonnet
+        needs: [fix]
+        skills: [pixel-review, pixel-animation, pixellab]
+        scope: { mode: stage_dir_only }
+        policy:
+          - "Read only. Re-run the measures and the 1x look on the corrected asset; report what is still open."
+        inputs:
+          brief: "{{ stages.brief.outputs.brief }}"
+          asset: "{{ stages.animate.outputs.asset }}"
+          fix: "{{ stages.fix.outputs.fix }}"
+        with:
+          instructions: >
+            Same review as the verify stage on the corrected sprite and its
+            export; write findings.json and recheck.md, and set
+            signals.fix_needed (strict boolean) as in verify. Remaining
+            blocking findings mean the asset is not deliverable: say which
+            Pixellab call would regenerate it.
+        outputs: [findings.json, recheck.md]
+
+  # Commit, push, draft PR. Pixellab usage of the whole run is summed in the PR body.
+  - name: report
+    agent: executor
+    model: haiku
+    needs: [correction]
+    scope: { mode: repo_wide }
+    policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
+      - "Never ask the user a question. No Pixellab call. Never merge, never mark the PR ready."
+      - "Commit only the asset files (.aseprite, exported sheet / PNG / JSON, .meta, previews) on the working branch; never the base branch."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      memory: "{{ stages.prepare.outputs.memory-context }}"
+      brief: "{{ stages.brief.outputs.brief }}"
+      asset: "{{ stages.animate.outputs.asset }}"
+      findings: "{{ stages.verify.outputs.findings }}"
+      usage_generate: "{{ stages.generate.outputs.pixellab-usage }}"
+      usage_animate: "{{ stages.animate.outputs.pixellab-usage }}"
+    with:
+      instructions: >
+        (1) Commit the asset files (`feat(art): ...`, French, one commit per
+        subject) and push the branch of context.json. (2) Open the PR as a
+        DRAFT (`rtk gh pr create --draft`) against context.baseBranch, or
+        update the body of the existing PR of the branch; title
+        `feat(art): <subject>`. Body: what was produced, files, size, palette,
+        frame count and ms timings, the last verdict of findings.json (the
+        recheck of the correction loop when it ran: read the latest
+        findings.json of the run) with the findings left open, the Pixellab
+        generations spent (sum of the pixellab-usage.json files of brief,
+        generate, animate and fix) out of max_cost, then `Closes #<issue>`
+        when context.issue is set. (3) Write pr.json {"pr": <number>,
+        "branch": "<branch>", "summary": "<one sentence>", "url": "<url>",
+        "generations": <n>}. Also write result.json, the file
+        the flows read (contract C9, flat object): {"pr": <PR number>,
+        "branch": "<branch>", "summary": "<one or two sentences: what was
+        produced, what is left>"}. Mirror pr, branch and summary as signals
+        of the reply envelope. Status blocked: the reason goes in
+        signals.blocked_reason.
+    outputs: [pr.json, result.json]

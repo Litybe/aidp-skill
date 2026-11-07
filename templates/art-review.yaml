@@ -1,0 +1,125 @@
+version: 5
+id: art-review
+description: >
+  Gamedev route `art`, review step: devil's advocate review of the PR of a
+  pixel art issue. The reviewer's job is to prove the issue is NOT done: it
+  starts from "the PR is incomplete" until each criterion is proven. Read only
+  (no edit, no git, no GitHub write): downloads the PR files into the stage
+  dir, measures them with the Aseprite MCP on a copy (sprite_inspect,
+  tag_list, lint with the palette, anim_audit per tag, unity_validate), checks
+  the .meta text (16 PPU, Point, no mipmap), the brief (size, frame count, ms
+  durations, states, variants, expected files), the palette (no off-palette
+  pixel) and the BIBLE notes the issue cites (direction artistique).
+
+  Outputs read by the flow (contract C4): result.json {verdict, findings} (contract C9,
+  mirrored in signals), verdict.json {verdict: done |
+  need-fix, fix_needed, blocking, ...}, findings.json {findings: [...],
+  fix_needed} and the Markdown report review.md in the stage dir. `done` only
+  when no criterion is missing or wrong and no blocking item is unverifiable.
+  Derived from the devil's advocate prompt of /issue-queue and the verify
+  stage of `pixelart`.
+inputs:
+  issue: { required: false, kind: string, default: "", description: "GitHub issue number; its linked PR is reviewed." }
+  pr: { required: false, kind: string, default: "", description: "PR number to review. Empty: the PR linked to `issue`, else the open PR of the current branch." }
+  palette: { required: false, kind: string, default: "rosy-42", description: "Palette every pixel must be on (pixellab skill assets/ name or .gpl path)." }
+  feature: { required: false, kind: string, description: "Ticket label; names the vault run folder." }
+settings:
+  knowledge_graph:
+    enabled: false
+stages:
+  - name: prepare
+    agent: executor
+    model: haiku
+    scope: { mode: stage_dir_only }
+    policy:
+      - "Never ask the user a question. Decide open points yourself and record them as assumptions."
+      - "Read only: no git command that changes anything, no commit, no push, no GitHub write. Another run may use the working directory."
+    inputs:
+      issue: "{{ inputs.issue }}"
+      pr: "{{ inputs.pr }}"
+    with:
+      instructions: >
+        (1) `rtk gh repo view --json nameWithOwner,defaultBranchRef`. (2) The
+        PR: `pr` when given, else the PR linked to `issue`
+        (`rtk gh pr list --search "<n> in:body" --state open --json number`),
+        else the open PR of the current branch; none or closed: blocked. (3)
+        The issue (`issue`, else the `Closes #<n>` of the PR body): read it
+        with `rtk gh issue view` and list every criterion (CA-n or implied):
+        size, frame counts, durations, states, variants, expected files,
+        BIBLE notes. (4) `rtk gh pr view <pr> --json
+        body,files,commits,headRefOid`. Download each PR file (and the preview
+        images) into the `files/` folder of the stage dir with `rtk gh api
+        "repos/<repo>/contents/<path>?ref=<headRefOid>" -H "Accept:
+        application/vnd.github.raw"`. (5) Review round: 1 + the number of PR
+        comments headed « Revue avocat du diable ». Write context.json: repo,
+        pr, issue, headSha, round, criteria (list of {id, text}), files
+        (list of {path, local}).
+        Memory (contract C10, templates/recipes/memory.md of the skill): with the issue number, run `rtk aidp memory context --project "<projectRoot>" --issue GH-<issue> --route art --stage review --budget 2000` (without an issue, drop `--issue`) and save its output as memory-context.md in your stage dir, unchanged; if the command fails, write memory-context.md holding only « Mémoire indisponible : <cause> » and go on. Read the BIBLE by its index (00_INDEX) and get any passage you need with `rtk aidp rag search "<query>" --project "<projectRoot>" --source bible --budget 1500`, never whole.
+    outputs: [context.json, memory-context.md]
+
+  - name: review
+    agent: pixel-reviewer
+    model: sonnet
+    needs: [prepare]
+    skills: [pixel-review, pixel-animation, pixel-palette, pixellab]
+    scope: { mode: stage_dir_only }
+    policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
+      - "Read only: never modify the project, never use git, never call a paid Pixellab tool. Measure copies of the files in the stage dir."
+      - "Devil's advocate: the PR is incomplete until each criterion is proven. Finding defects is success: reply completed once findings.json is written and re-read."
+      - "Never use the Unity Editor (another run may hold it); .meta files are read as text."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      memory: "{{ stages.prepare.outputs.memory-context }}"
+      palette: "{{ inputs.palette }}"
+      task: >
+        Review the PR of `context` against the issue. (A) Per criterion, a
+        status ✅ proven (with the proof: file, measure, value) / ❌ missing or
+        wrong / ⚠️ not verifiable here (Play Mode, Unity Editor), as a table.
+        (B) Measures on copies with the Aseprite MCP: sprite_inspect (size,
+        frames, layers), tag_list (names, forward direction only), lint with
+        the palette, anim_audit on each tag, unity_validate against the project
+        profile; check each .meta text: 16 pixels per unit, filter Point, no
+        mipmap, compression none, pivot/slices as the profile says. (C)
+        Conformity: expected size, frame count and ms durations of the brief or
+        the issue, expected files all present and no extra file, every pixel on
+        the palette (`palette`), canon of the BIBLE notes the issue cites
+        (.claude/BIBLE/ direction artistique), what the PR claims without
+        proving. (D) AI defects and the scored grid of pixel-review (silhouette,
+        clusters, outline, shading, boil, loop). Write review.md (the report in
+        Markdown, headed « ## Revue avocat du diable — verdict : done |
+        need-fix ») and findings.json: {"findings": [{id, severity
+        (bloquant|majeur|mineur), criterion, file, where, measure, expected,
+        fix}], "fix_needed": <bool>, "criteria": [{id, status, proof}]}.
+        fix_needed is true when any finding is bloquant or majeur, or a
+        criterion is ❌. Mirror it as the strict boolean signals.fix_needed.
+    outputs: [findings.json, review.md]
+
+  - name: verdict
+    agent: executor
+    model: haiku
+    needs: [review]
+    scope: { mode: stage_dir_only }
+    policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
+      - "Memory proposals: write memory-proposals.json (`{\"proposals\": []}` when nothing qualifies), 5 max, non-obvious reusable lessons only, as templates/recipes/memory.md §3 says."
+      - "No GitHub write, no commit, no push."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      memory: "{{ stages.prepare.outputs.memory-context }}"
+      findings: "{{ stages.review.outputs.findings }}"
+    with:
+      instructions: >
+        Write verdict.json: {"verdict": "need-fix" when findings.fix_needed
+        else "done", "fix_needed": <bool>, "pr": <n>, "round": <n>,
+        "blocking": <n>, "findings": <count>, "criteria_total": <n>,
+        "criteria_done": <n>, "next": "fix" when need-fix else
+        "art-import"}. The review.md of the review stage is the report the
+        flow posts on the PR; copy nothing into it.
+        Also write result.json, the file the flows read (contract C9, flat
+        object): {"verdict": "done|need-fix" (the verdict.json one),
+        "findings": <the findings array of findings.json, or its path when it
+        has more than 50 entries>}. Mirror verdict and findings (a count) as
+        signals of the reply envelope. Status blocked: the reason goes in
+        signals.blocked_reason.
+    outputs: [verdict.json, result.json, memory-proposals.json]

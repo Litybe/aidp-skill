@@ -1,0 +1,232 @@
+version: 5
+id: dev-unity
+description: >
+  Implement a GitHub issue (or a plain-text demand) in a Unity project, then
+  test it for real in the Unity Editor. prepare → plan → implement (draft PR)
+  → playtest in the Editor → correction loop (fix the failed scenarios, then
+  playtest again, two rounds at most) → report. The PR stays in draft: the
+  GitHub review and the review fixes are the next two pipelines,
+  `review-unity` then `fix-review-unity` (the /run-unity-dev-pipeline command
+  chains the three).
+
+  Agents: planner (generic, with the unity-csharp-dev skill),
+  unity-issue-implementer, unity-playtester. They follow the unity-csharp-dev
+  skill, unity-shader-hlsl for shader changes, and the references of
+  unity-issue-workflow (unity-verify.md, unity-playtest.md, github.md,
+  config.md). The playtester drives the Editor through the Unity MCP
+  (mcp__unity-mcp__*) and, for real input in the Game view, through computer
+  use (mcp__computer-use__*): the first run asks the user to grant access to
+  the Unity Editor.
+
+  Editor contention: implement compiles and runs EditMode tests in batchmode,
+  which needs the Editor closed; the playtest opens the Editor when it is
+  closed and leaves it open, so the fixes of the correction loop compile
+  through the Unity MCP (unity-verify.md §2) instead of batchmode.
+  The project configuration is .claude/unity-workflow.json at the repository
+  root, defaults filled in when absent. Never merges, never marks the PR
+  ready.
+inputs:
+  issue: { required: false, kind: string, default: "", description: "GitHub issue number to implement. Empty: the demand is `prompt`." }
+  prompt: { required: false, kind: string, default: "", description: "Plain-text demand when there is no GitHub issue (a local ticket body when the perso-delivery flow runs it)." }
+  feature: { required: false, kind: string, description: "Feature or ticket label; names the vault run folder." }
+  playtest: { required: false, kind: bool, default: true, description: "Test the PR in the Unity Editor after the implementation (Unity MCP + computer use)." }
+  # Kept for the perso-delivery flow, which passes it; this pipeline never marks the PR ready.
+  mark_ready: { required: false, kind: bool, default: false, description: "Ignored: the PR is marked ready by fix-review-unity." }
+settings:
+  max_playtest_fix_rounds: 2
+  knowledge_graph:
+    enabled: false
+stages:
+  - name: prepare
+    agent: executor
+    model: haiku
+    scope: { mode: stage_dir_only }
+    policy:
+      - "Never ask the user a question. Decide open points yourself and record them as assumptions."
+      - "Read only: no commit, no push, no branch switch, no GitHub write."
+    inputs:
+      issue: "{{ inputs.issue }}"
+      prompt: "{{ inputs.prompt }}"
+    with:
+      instructions: >
+        Prepare the run as section 1 of
+        ~/.claude/skills/unity-issue-workflow/SKILL.md does, without asking
+        anything. (1) The working directory must hold Assets/ and
+        ProjectSettings/; otherwise report blocked. (2) `rtk gh auth status`, then
+        `rtk gh repo view --json nameWithOwner,defaultBranchRef`. (3) Read
+        .claude/unity-workflow.json and fill the defaults of
+        ~/.claude/skills/unity-issue-workflow/references/config.md; absent
+        file means all defaults; also default
+        unity.closeEditorAfterPlaytest to false. (4) With an `issue`,
+        `rtk gh issue view`; a closed issue is blocked. With neither `issue`
+        nor `prompt`, blocked. (5) `rtk git status --porcelain` not empty is
+        blocked. (6) Temp/UnityLockfile present: the Editor is open, so the
+        implementer's batchmode verification will fall back to the Unity
+        MCP; record it as an assumption (do not change unity.verify). (7)
+        Branch: when the current branch differs from the base branch, keep
+        it (`branch_exists: true`); otherwise derive `<prefix><n>-<slug>`
+        from branchPrefixes and the issue labels, the slug being the title
+        (or the prompt's first line) in ASCII kebab-case, 40 characters at
+        most. (8) Look for a PR already linked to the issue
+        (references/github.md) and record it, or null. Write context.json
+        with repo, projectRoot (absolute), baseBranch, branch,
+        branch_exists, issue, prompt, pr (number or null) and config
+        (defaults filled in).
+    outputs: [context.json]
+
+  # Plan before code: the planner reads the issue, the contextDocs and the code it touches and writes
+  # the implementation plan the implementer follows, plus the playtest scenarios the playtester plays.
+  - name: plan
+    agent: planner
+    model: opus
+    skills: [unity-csharp-dev]
+    needs: [prepare]
+    scope: { mode: stage_dir_only }
+    with: { mode: feature }
+    policy:
+      - "Never ask the user a question. Decide open points yourself and record them in the plan's Assumptions section."
+      - "Read only: no commit, no push, no branch switch, no GitHub write, no file written outside the stage dir."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      instructions: >
+        Plan the implementation of the demand of `context` (the issue via
+        `rtk gh issue view <issue> --repo <repo> --comments`, else `prompt`)
+        in this Unity project. Read the contextDocs of the config that touch
+        the subject, then the code the demand touches and its neighbours
+        (scopes, services, views, configs, ScriptableObjects, tests under
+        testsRoot). Follow the unity-csharp-dev skill (layers Model → Config
+        → Repository → Service → Presenter → View → Scope, VContainer, no
+        magic values, tunable values in ScriptableObjects) and, for shader
+        work, ~/.claude/skills/unity-shader-hlsl/SKILL.md. An issue written
+        with the github-issue-ticket template (sections « Description
+        technique », CA-n, T-n): its Files table, signatures and values are
+        the plan's frame, « Hors périmètre » is forbidden. Write plan.md in
+        the language of config.language with these sections: (1) Critères
+        d'acceptation — every CA-n (or the criteria the text implies), each
+        with how it will be met; (2) Fichiers — table path / create|modify /
+        role, in implementation order, every new file under Assets/ noted as
+        needing its .meta; (3) Étapes — ordered, one verifiable change each,
+        citing the existing code to reuse with its path; (4) Tests EditMode —
+        one per behaviour of each service created or modified, with test
+        name, data and expected result (and the T-n it covers); (5)
+        Playtest — one scenario per CA-n and per manual T-n, playable in the
+        Editor: scene, starting state, actions (Unity MCP or keyboard /
+        mouse input in the Game view), observable expected result; plus one
+        non-regression scenario; (6) Actions manuelles dans l'éditeur — what
+        only the Editor can do (assign a reference, create a ScriptableObject
+        asset, add a component or LifetimeScope to a scene), each doable in
+        one minute; (7) Risques et hypothèses. No plan.json: Unity has one
+        Editor per project, the implementation runs as one stage.
+    outputs: [plan.md]
+
+  - name: implement
+    agent: unity-issue-implementer
+    model: opus
+    needs: [plan]
+    scope: { mode: repo_wide }
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      plan: "{{ stages.plan.outputs.plan }}"
+      task: >
+        Implement the demand of `context` and open the draft PR, as your
+        section « Lancé par aidp » says. Follow `plan` (plan.md): its files,
+        order, EditMode tests and manual actions are your plan; a deviation
+        is an assumption with its reason. Put the plan's Playtest scenarios
+        in the PR body under « Scénarios de test dans l'éditeur ». When
+        `context.pr` is set, the PR exists: commit and push on its branch and
+        update its body instead of opening a new one.
+    outputs: [pr.json, implementation.json]
+
+  - name: playtest
+    agent: unity-playtester
+    model: sonnet
+    needs: [implement]
+    scope: { mode: stage_dir_only }
+    when: "{{ inputs.playtest }}"
+    policy:
+      - "Never edit, commit or push a file of the repository; never switch branch. The only GitHub write allowed is `rtk gh pr comment`."
+      - "Never save a scene, prefab or asset; never create, modify or delete a scene object outside Play Mode."
+      - "Computer use: request access to the Unity Editor only; never click a link, never type outside the Unity window."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      plan: "{{ stages.plan.outputs.plan }}"
+      round: 1
+      task: >
+        Test the PR in the Unity Editor as your section « Lancé par aidp »
+        and ~/.claude/skills/unity-issue-workflow/references/unity-playtest.md
+        say. Start from the Playtest section of `plan`, completed with every
+        CA-n of the issue.
+    outputs: [playtest.json, playtest-report.md]
+
+  # The fixes a playtest asks for, then a new playtest. The body ends with `retest`, which re-declares
+  # playtest.json: the loop's `when:` reads its fix_needed, so the loop converges once a round passes.
+  - name: playtest_fix
+    type: loop
+    when: "{{ stages.playtest.outputs.playtest.fix_needed }}"
+    max_iterations: "{{ settings.max_playtest_fix_rounds }}"
+    body:
+      - name: fix_playtest
+        agent: unity-issue-implementer
+        model: opus
+        scope: { mode: repo_wide }
+        policy:
+          - "The PR already exists: never open a new one, never switch to the base branch."
+        inputs:
+          context: "{{ stages.prepare.outputs.context }}"
+          plan: "{{ stages.plan.outputs.plan }}"
+          playtest: "{{ stages.playtest.outputs.playtest }}"
+          task: >
+            The playtest in the Unity Editor failed. Fix every scenario of
+            `playtest` with result `fail` (and a compile failure first),
+            using its observed result and suspect location, within the scope
+            of the issue and the rules of unity-csharp-dev. Verify as
+            unity-verify.md says: the Editor is probably open, so compile
+            through the Unity MCP (§2). Commit (`fix(playtest): …`), push on
+            the PR's branch, and update the PR's « Vérification » section.
+            Write implementation.json and pr.json as your section « Lancé par
+            aidp » says.
+        outputs: [implementation.json, pr.json]
+      - name: retest
+        agent: unity-playtester
+        model: sonnet
+        needs: [fix_playtest]
+        scope: { mode: stage_dir_only }
+        policy:
+          - "Never edit, commit or push a file of the repository; never switch branch. The only GitHub write allowed is `rtk gh pr comment`."
+          - "Never save a scene, prefab or asset; never create, modify or delete a scene object outside Play Mode."
+          - "Computer use: request access to the Unity Editor only; never click a link, never type outside the Unity window."
+        inputs:
+          context: "{{ stages.prepare.outputs.context }}"
+          plan: "{{ stages.plan.outputs.plan }}"
+          focus: "{{ stages.playtest.outputs.playtest }}"
+          task: >
+            Test the PR again in the Unity Editor after the fixes, as your
+            section « Lancé par aidp » says. Replay first the scenarios that
+            failed in `focus`, then every CA-n. Comment marker round = the
+            previous round + 1 (count the `unity-playtest` comments already
+            on the PR).
+        outputs: [playtest.json, playtest-report.md]
+
+  - name: report
+    agent: executor
+    model: haiku
+    needs: [playtest_fix]
+    scope: { mode: stage_dir_only }
+    policy:
+      - "No GitHub write, no commit, no push. Never merge, never mark the PR ready."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      plan: "{{ stages.plan.outputs.plan }}"
+      implementation: "{{ stages.implement.outputs.implementation }}"
+      pr: "{{ stages.implement.outputs.pr }}"
+    with:
+      instructions: >
+        Write report.md: PR link, acceptance criteria covered (from the plan
+        and implementation.json), the batchmode verification that really ran,
+        the playtest rounds (the playtest.json of the last playtest or
+        retest stage that ran: scenarios pass / fail / skipped, what is still
+        failing), manual actions in the Editor, the implementer's
+        assumptions, and the next step: `review-unity` on this PR. Also
+        write state.json: {"pr": <number>, "playtest_passed": <bool or null
+        when no playtest ran>, "scenarios_failed": <n>}.
+    outputs: [report.md, state.json]

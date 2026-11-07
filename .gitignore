@@ -1,0 +1,6 @@
+graphify-out/
+.aidp/
+*.log
+Pipelines/
+.claude/settings.local.json
+.claude/worktrees/

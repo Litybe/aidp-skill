@@ -1,0 +1,125 @@
+version: 5
+id: review-unity
+description: >
+  Unity-specialised review of the PR of a GitHub issue: checks that the
+  WHOLE issue is done (every acceptance criterion, every T-n test, the
+  manual actions, the in-Editor playtest evidence), then the code (bugs, Unity
+  lifecycle, unity-csharp-dev rules, Unity pitfalls, tests). Changes needed:
+  one GitHub review with inline comments ranked by severity. Nothing to
+  change: one GitHub review whose body is the full verification report (the
+  criteria with their evidence, what was read, what was tested). Never edits
+  the code. Second pipeline of /run-unity-dev-pipeline, after dev-unity and
+  before fix-review-unity.
+
+  Agent: unity-pr-reviewer (read-only), following unity-csharp-dev,
+  unity-shader-hlsl for shaders, and references/github.md of
+  unity-issue-workflow. The playtest reports posted on the PR by
+  unity-playtester (comments marked `<!-- unity-playtest round=n -->`) are
+  the in-Editor evidence.
+inputs:
+  issue: { required: false, kind: string, default: "", description: "GitHub issue number; its linked PR is reviewed." }
+  pr: { required: false, kind: string, default: "", description: "PR number to review. Empty: the PR linked to `issue`, else the open PR of the current branch." }
+  feature: { required: false, kind: string, description: "Feature or ticket label; names the vault run folder." }
+settings:
+  knowledge_graph:
+    enabled: false
+stages:
+  - name: prepare
+    agent: executor
+    model: haiku
+    scope: { mode: stage_dir_only }
+    policy:
+      - "Never ask the user a question. Decide open points yourself and record them as assumptions."
+      - "Read only: no commit, no push, no branch switch, no GitHub write."
+    inputs:
+      issue: "{{ inputs.issue }}"
+      pr: "{{ inputs.pr }}"
+    with:
+      instructions: >
+        (1) The working directory must hold Assets/ and ProjectSettings/;
+        otherwise blocked. (2) `rtk gh repo view --json
+        nameWithOwner,defaultBranchRef`. (3) Read .claude/unity-workflow.json
+        and fill the defaults of
+        ~/.claude/skills/unity-issue-workflow/references/config.md. (4) The
+        PR: `pr` when given; else the PR linked to `issue`
+        (references/github.md, « PR déjà liée à une issue »); else the open
+        PR of the current branch (`rtk gh pr view --json number`). None
+        found, or the PR is closed or merged: blocked. (5) The issue: `issue`
+        when given, else the `Closes #<n>` of the PR body (may be null). (6)
+        Review round: 1 + the number of PR reviews whose body contains
+        `unity-review-summary` (`rtk gh api
+        repos/<repo>/pulls/<pr>/reviews --paginate --jq '.[].body'`); the
+        comment id prefix is `R<round>-`. (7) Playtest evidence: the PR
+        comments containing `<!-- unity-playtest` (`rtk gh pr view <pr>
+        --json comments`); record the last one's round and whether it
+        reports failures. Write context.json with repo, projectRoot,
+        baseBranch, branch (the PR head), branch_exists: true, issue, pr,
+        review_round, id_prefix, playtest {rounds, last_passed, last_url}
+        and config.
+    outputs: [context.json]
+
+  - name: review
+    agent: unity-pr-reviewer
+    model: opus
+    needs: [prepare]
+    scope: { mode: stage_dir_only }
+    policy:
+      - "Never edit, commit or push a file of the repository; never switch branch."
+      - "The only GitHub write allowed is ONE review (`rtk gh api repos/<repo>/pulls/<pr>/reviews --method POST`), event COMMENT."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      task: >
+        Review the PR `context.pr` and publish ONE GitHub review, comment ids
+        prefixed `context.id_prefix`, round `context.review_round`, as your
+        section « Lancé par aidp » says, with these Unity-specific demands.
+        (A) Issue completeness first — the heart of this review. Build the
+        table of every acceptance criterion (CA-n, or the criteria the issue
+        text implies), every T-n scenario, every « Actions dans l'éditeur »
+        item and every « Hors périmètre » point, each with its status
+        (✅ done / ❌ missing / ⚠️ partial / 🧪 not verifiable) and its
+        evidence: `file:line` of the code, name of the EditMode test, or the
+        playtest scenario and round from the `unity-playtest` PR comments.
+        A criterion with no code, or failed in the last playtest round, is a
+        `bloquant` comment. A T-n with no matching test is `majeur`. A
+        manual action the PR needs but does not list is `majeur`. No playtest
+        evidence at all is not a comment: say it in the body. (B) Then the
+        code as your procedure says (full files read at the head sha,
+        correctness, Unity lifecycle, unity-csharp-dev review-checklist on
+        the changed lines, Unity pitfalls: .meta, FormerlySerializedAs,
+        hand-edited .unity/.prefab/.asset, unregistered injected type,
+        generated files; per-frame allocations; shaders with
+        unity-shader-hlsl). (C) Publish. Changes needed (at least one
+        comment of a severity of config.review.fixSeverities): inline
+        comments with the github.md format, the review body holding the
+        severity table and the completeness table. Nothing to change: the
+        review body is the full verification report — the completeness table
+        with every evidence, the files read, the checks run with their
+        result, the playtest rounds, and the manual actions left to the
+        human — opened with « ✅ Rien à corriger ». (D) review.json also
+        carries `fix_needed` (boolean, same rule as the signal),
+        `has_blocking_findings`, `completeness` (the table as an array of
+        {id, status, evidence}) and `round`.
+    outputs: [review.json, findings.json]
+
+  - name: verdict
+    agent: executor
+    model: haiku
+    needs: [review]
+    scope: { mode: stage_dir_only }
+    policy:
+      - "No GitHub write, no commit, no push."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      review: "{{ stages.review.outputs.review }}"
+      findings: "{{ stages.review.outputs.findings }}"
+    with:
+      instructions: >
+        Write verdict.json: {"pr": <n>, "round": <n>, "review_url": "<url>",
+        "fix_needed": <bool>, "blocking": <n>, "comments": <n>,
+        "criteria_total": <n>, "criteria_done": <n>, "next":
+        "fix-review-unity" when fix_needed else "none"}. Write verdict.md:
+        the review link, the completeness table, the comments by severity,
+        and the next step (`fix-review-unity` on this PR, or « rien à
+        corriger : la PR peut passer en ready puis être mergée par un
+        humain »).
+    outputs: [verdict.json, verdict.md]

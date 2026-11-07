@@ -1,0 +1,241 @@
+version: 5
+id: dev-studio
+description: >
+  Develop aidp-studio, the front of the aidp daemon (D:\AIDP\src\aidp-studio
+  in the gamedev profile): Vite + React + TypeScript strict + Tailwind, with
+  TanStack Query (cache and invalidation) and TanStack Router. It is a pure
+  client of the daemon: REST on http://127.0.0.1:3001/api/* and real time
+  through one global EventSource on `GET /api/events` (the bus SSE), each
+  event type invalidating the queries it concerns. In normal use the daemon
+  serves the build (`aidp gateway serve --ui-dir <repo>/dist`); in dev,
+  `npm run dev` proxies `/api` to 127.0.0.1:3001. DEMAND is plain text
+  (`prompt`), usually one lot of the front plan.
+
+  The one rule that shapes every stage: THE FRONT DISPLAYS, THE DAEMON DECIDES.
+  Business rules (sessions, flows, gates, dispatcher, budget, tickets) live in
+  the Rust crate `aidp-gateway` of the aidp repository ($AIDP_SRC,
+  D:\AIDP\src\aidp), which this pipeline reads but never edits; its HTTP
+  contract is `docs/gateway-api.md` there. When the request needs a new
+  daemon capability, the plan writes a `daemon-request.md` describing the
+  contract to add (route, method, JSON in and out, bus events), and the front
+  part is built against that contract with a clearly labelled fallback until
+  a `dev-aidp` run lands it.
+
+  Checks that matter here: `rtk npm run typecheck`, `rtk npm run build` and the
+  Vitest suite (`rtk npx vitest run`), plus a smoke boot of the built app.
+  Visual checks use the browser built into Claude, never Playwright (it
+  downloads browsers onto C:). Tracks via track = quick | standard | deep:
+  `deep` adds the four-axis review and its correction loop.
+policy:
+  - 'THE FRONT DISPLAYS, THE DAEMON DECIDES: no business rule in the front, and no direct call to gh, git, Unity or Pixellab. The front only calls the daemon API.'
+  - 'Never edit the aidp repository ($AIDP_SRC, D:\AIDP\src\aidp). A capability the daemon lacks is written down in daemon-request.md for a dev-aidp run.'
+  - 'Nothing is installed or written on C:. Every npm or npx command runs with npm_config_cache set to D:\DevTools\npm-cache; node_modules stays in the repository. Never npm install -g, never install Playwright or download a browser.'
+  - 'TypeScript strict: no `any`, no `@ts-ignore`, no non-null assertion to silence the compiler. API types live in src/api/types.ts and follow docs/gateway-api.md of the aidp repository.'
+  - 'When the repository has an AGENTS.md or a README with conventions, read it before the first change and follow it.'
+inputs:
+  # The request in plain text - "barre du haut avec les jauges 5 h et 7 j",
+  # "page Inbox avec merge en un clic". Usually one lot of the front plan.
+  prompt: { required: true, kind: string, description: "Demande en langage naturel decrivant le changement a apporter a aidp-studio (ex. \"afficher les jauges 5 h et 7 j dans la barre du haut\")." }
+  # Names the branch (feat/<feature>), the vault folder and the PR. Required
+  # because nothing else can derive it - there is no ticket list to fall back on.
+  feature: { required: true, kind: string, description: "Nom de la feature : alimente run::feature_key (sa PREMIERE branche testee) - decide le nom de la branche git ET le dossier du vault Obsidian pour ce run." }
+  # Absolute path of the checkout the run works in, usually a dedicated git
+  # worktree. Every stage that touches the repo receives it, because the
+  # sub-agents do not run in the workspace by themselves.
+  workspace: { required: false, kind: string, default: ".", description: "Chemin absolu du checkout (souvent un worktree git dedie) dans lequel le run travaille : chaque stage qui lit, ecrit, teste ou commite le depot le fait uniquement la." }
+  track: { required: true, kind: enum, values: [quick, standard, deep], default: standard, description: "Profondeur du run : quick et standard implementent puis verifient, deep ajoute la revue quatre axes et sa boucle de correction." }
+settings:
+  pr_draft: false
+  max_correction_iterations: 2
+  knowledge_graph:
+    enabled: true
+    refresh: never
+    code_only: true
+stages:
+  # Cut the feature branch off an up-to-date default branch first, so every
+  # later stage's writes, commits and the PR land on feat/<feature>.
+  - name: prepare_branch
+    model: haiku   # delibere : setup de branche mecanique, aucun raisonnement - haiku suffit
+    agent: executor
+    inputs:
+      branch: "feat/{{ feature }}"
+      workspace: "{{ inputs.workspace }}"
+      task: >
+        In `workspace`: run `rtk git status --porcelain`; if the working tree
+        has changes this run did not make, reply `blocked` and name the files.
+        Find the default branch (`main` when it exists, else `master`), switch
+        to it and, only when it tracks a remote, run `rtk git pull --ff-only`.
+        Then switch to `branch`, creating it from the default branch when it
+        does not exist. Write branch.json with `branch`, `base` (the default
+        branch) and `base_sha`.
+    outputs: [branch.json]
+    when: "true"
+
+  # --- Step 0: what do we already know? The project knowledge base
+  # (<vault>/Knowledge/<repo>/) is documentation accumulated by previous runs.
+  - name: knowledge
+    type: pipeline
+    uses: knowledge-read
+    needs: [prepare_branch]
+    with: { focus: "{{ feature }}" }
+    outputs:
+      - { name: knowledge_context, from: knowledge_read.knowledge_context }
+
+  # Read-only read of the front and of the daemon contract it relies on. No
+  # `needs` on `knowledge`, so both run in one parallel() block.
+  - name: read_front
+    agent: analyzer
+    model: haiku   # delibere : lecture ciblee, pas de synthese - haiku suffit
+    skills: [graphify]
+    needs: [prepare_branch]
+    inputs:
+      workspace: "{{ inputs.workspace }}"
+      task: >
+        For this request: "{{ inputs.prompt }}", read the front in `workspace`
+        (routes, pages, components, hooks, src/api/client.ts and
+        src/api/types.ts, the global EventSource and its query invalidation
+        map, vite.config.ts, the tests) and the daemon contract in
+        $AIDP_SRC/docs/gateway-api.md. Name the files that would change, the
+        routes and bus events the change relies on, and for each one whether
+        the daemon already serves it (quote the route and its JSON shape) or
+        must be asked for it. Say explicitly what you could NOT find; an empty
+        or missing repository is a valid finding.
+    outputs: [front_context.md]
+
+  # Synthesis: one context note the plan is written from.
+  - name: discover
+    agent: analyzer
+    model: haiku   # delibere : fusion de deux lectures courtes - haiku suffit
+    needs: [knowledge, read_front]
+    inputs:
+      knowledge_context: "{{ stages.knowledge.outputs.knowledge_context }}"
+      task: >
+        Merge the knowledge-base digest and the front read into one context
+        note for "{{ inputs.prompt }}". State the change, the full set of files
+        that must move together (pages, components, hooks, api client and
+        types, tests, docs), the daemon routes and events it relies on
+        (existing vs. to be requested), the acceptance criteria, and the open
+        questions. Flag any divergence between docs/gateway-api.md and what the
+        front assumes — a bug to report, not to fix silently inside this change.
+    outputs: [context.md]
+
+  # `plan.json` (schema/plan.schema.json) is the machine contract: one object per
+  # task, each with its own prompt, `needs` and `files` write set. Slice by LAYER
+  # here - pages and routes, components and hooks, api client and types, docs -
+  # because those write sets are naturally disjoint and can run at the same time.
+  # `plan.md` stays the human narrative.
+  - name: plan
+    agent: planner
+    skills: [graphify]
+    needs: [discover]
+    with: { mode: feature }
+    inputs:
+      workspace: "{{ inputs.workspace }}"
+      task: >
+        Write an executable plan for "{{ inputs.prompt }}". Slice into
+        file-disjoint tasks (pages and routes / components and hooks / api
+        client and types / docs) with `needs` only where a task genuinely reads
+        another's output. Every task says which check proves it: `rtk npm run
+        typecheck`, `rtk npm run build`, the Vitest test it adds or extends (any
+        component with logic gets one, with Testing Library), and for UI tasks
+        the exact scenario to replay in the browser (URL, action, expected
+        text). Live data goes through TanStack Query; a bus event invalidates
+        the query keys it concerns, in the one global EventSource. No business
+        rule in the front: if the request needs one, add a task that writes
+        `daemon-request.md` (route, method, JSON in/out, events on the bus) and
+        build the UI against that contract with a labelled fallback. French
+        wording in the UI.
+    outputs: [plan.json, plan.md]
+
+  # Plan-driven implementation: `aidp workflow emit` loads plan.json, validates
+  # the task graph, serialises any two tasks that would write the same file, and
+  # dispatches one sub-agent per task in the shared working tree. TWO-PASS: the
+  # first emit stops here (`awaiting_plan`); re-emitting after the planner has
+  # written the file compiles the tasks and everything after them.
+  - name: implement
+    agent: executor
+    skills: [graphify]
+    needs: [plan]
+    scope: { mode: repo_wide }
+    plan_tasks:
+      from: "{{ stages.plan.outputs.plan }}"
+      max: 5
+      merge_hint: >
+        Apply the shared-file changes the tasks deferred to you
+        (src/api/types.ts, src/api/client.ts, the router and route tree, the
+        EventSource invalidation map, package.json), run `rtk npm install` only
+        when package.json changed (npm_config_cache set as the pipeline policy
+        says), then run from the repo root: `rtk npm run typecheck`,
+        `rtk npm run build` and `rtk npx vitest run`. Fix cross-task breakage and
+        write the consolidated changed-files.json. Do not touch the aidp
+        repository. Still red when you finish: reply `needs_review`, name each
+        failing check in `summary` and set `signals.tests_failed`.
+    outputs: [changed-files.json]
+
+  # The gauntlet as its own stage, on the merged tree. Separate from `implement`
+  # so a green run is an artefact the review and the PR can cite, and so a
+  # correction iteration re-proves it rather than trusting the fixer's word.
+  - name: verify
+    agent: executor
+    needs: [implement]
+    scope: { mode: repo_wide }
+    inputs:
+      workspace: "{{ inputs.workspace }}"
+      task: >
+        Prove the tree is green, from the repo root, in this order: `rtk npm run
+        typecheck`, `rtk npm run build`, `rtk npx vitest run`, then a smoke boot:
+        `npx vite preview --port 4173 --strictPort` in the background, `curl -s
+        http://127.0.0.1:4173/` must answer the app's index.html, then stop it.
+        Finally, informational only: `curl -s http://127.0.0.1:3001/api/health`
+        says whether a daemon is reachable. Record each command with its exit
+        code and, on failure, the trimmed real error. Fix only what is
+        trivially and unambiguously broken by the change; anything else is
+        reported as a failure. Write verify.json with one entry per command and
+        an overall `ok` flag.
+    outputs: [verify.json]
+
+  # Review, composed from the reusable `review` sub-pipeline (4 rubric
+  # dimensions in parallel then synthesis).
+  - name: review
+    type: pipeline
+    when: "{{ inputs.track == 'deep' }}"
+    uses: review
+    needs: [verify]
+    outputs:
+      - { name: findings, from: review.findings }
+      - { name: summary, from: review.summary }
+
+  - name: correction_loop
+    type: loop
+    when: "{{ stages.review.outputs.findings.has_blocking_findings }}"
+    max_iterations: "{{ settings.max_correction_iterations }}"
+    body:
+      - { name: replan, agent: planner, model: sonnet, with: { mode: correction }, inputs: { findings: "{{ stages.review.outputs.findings }}" } }   # delibere : une reprise de plan est un delta, pas une conception - opus serait surpaye
+      # A failing check in the findings is fixed here, even one that also fails
+      # on the default branch: the run has no other place to fix it. Still red
+      # after the fix: reply `needs_review` naming the checks; the loop's
+      # exhaustion guard is the human checkpoint.
+      - { name: refix, agent: executor, scope: { mode: repo_wide }, needs: [replan], inputs: { workspace: "{{ inputs.workspace }}", task: "Apply the correction plan. Fix every blocking finding, failing checks first, including checks that look pre-existing or unrelated to this change. Then re-run from the repo root: `rtk npm run typecheck`, `rtk npm run build` and `rtk npx vitest run`. If anything is still red, reply `needs_review`, name each failing check in `summary` and set `signals.tests_failed`." } }
+      # Re-review the fixed code: the loop must re-produce the `findings` output it loops on, otherwise the loop condition never changes and the review stage is not linked back to the loop.
+      - { name: rereview, agent: reviewer, skills: [graphify], needs: [refix], inputs: { workspace: "{{ inputs.workspace }}", task: "Re-review the fixed tree. Re-run `rtk npm run typecheck`, `rtk npm run build` and `rtk npx vitest run` from the repo root yourself rather than trusting refix's report: each failing check is a `blocking` finding (category `tests`), pre-existing or not. A business rule implemented in the front is a `blocking` finding (category `conventions`)." }, outputs: [findings.json, summary.md] }
+
+  - name: pr
+    policy:
+      - "Open the PR with `rtk aidp gh pr-create --draft` only when the stage input pr_draft is true; otherwise open a regular PR."
+    agent: executor
+    model: haiku   # delibere : commit et ouverture de PR, mecanique - haiku suffit
+    needs: [verify, review]
+    inputs:
+      pr_draft: "{{ settings.pr_draft }}"
+      workspace: "{{ inputs.workspace }}"
+      task: >
+        In `workspace`, commit what this run changed on feat/{{ feature }} with
+        Conventional Commits messages, never on the default branch. Then run
+        `rtk git remote`: when the repository has no remote, do not push and
+        write pr.json with `pr: null`, the branch and the reason; otherwise
+        push the branch and open the PR against the default branch with
+        `rtk aidp gh pr-create`. The PR body states the change, the checks run
+        with their result (verify.json), and daemon-request.md when there is
+        one. No ticket or PR references in commit messages or in the body.
+    scope: { mode: stage_dir_only }
+    outputs: [pr.json]

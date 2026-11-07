@@ -1,0 +1,132 @@
+version: 5
+id: unity-test
+description: >
+  Test the PR of a Unity issue in the open Editor, with no screenshot and no
+  computer use: prepare → test. The test stage runs the compile gate C1, the
+  EditMode and PlayMode suites, then writes and plays ONE PlaytestDriver
+  scenario (contract C2) per acceptance criterion `CA-n`:
+  Assets/Tests/Playtest/Scenarios/issue-<n>-ca<k>.json, started through the
+  file bridge or `PlaytestBridge.Run`, the result read in
+  .aidp/playtest/results/. The evidence (assert values, captures) goes into
+  one PR comment marked `<!-- unity-test round=n -->`, then the verdict.
+
+  Outputs read by the flows (C4): `passed` (boolean) and `report` (the
+  Markdown test report), via result.json. A criterion tagged
+  `needs-feel-check` cannot be judged by a probe: the other criteria are
+  tested, then the stage ends `blocked: feel-check` (a human session judges
+  it). Unity MCP silent, or no C1 / C2 result in time: `blocked: unity-mcp`.
+  A failed test or scenario is NOT a block: passed false, and the flow runs
+  `unity-fix` with `report_from: test`.
+
+  The stage pushes one commit holding only the new scenario files (the
+  non-regression library grows by one scenario per criterion): the flow step
+  must declare `pushes: true`. It never edits game code. The `unity-editor`
+  resource is declared by the flow.
+
+  Agent: unity-playtester (its computer-use part is forbidden here). Shared
+  recipe: templates/recipes/unity-verify.md.
+inputs:
+  issue: { required: false, kind: string, default: "", description: "GitHub issue number; its linked PR is tested." }
+  pr: { required: false, kind: string, default: "", description: "PR number. Empty: the PR linked to `issue`, else the open PR of the current branch." }
+  feature: { required: false, kind: string, description: "Feature or ticket label; names the vault run folder." }
+settings:
+  knowledge_graph:
+    enabled: false
+stages:
+  - name: prepare
+    agent: executor
+    model: haiku
+    scope: { mode: stage_dir_only }
+    policy:
+      - "Never ask the user a question. Decide open points yourself and record them as assumptions."
+      - "Read only: no commit, no push, no branch switch, no GitHub write. Do not open or compile Unity."
+    inputs:
+      issue: "{{ inputs.issue }}"
+      pr: "{{ inputs.pr }}"
+    with:
+      instructions: >
+        (1) The working directory must hold Assets/ and ProjectSettings/;
+        otherwise blocked. (2) `rtk gh repo view --json
+        nameWithOwner,defaultBranchRef`. (3) Read .claude/unity-workflow.json
+        and fill the defaults of
+        ~/.claude/skills/unity-issue-workflow/references/config.md. (4) The
+        PR: `pr` when given; else the PR linked to `issue`
+        (references/github.md); else the open PR of the current branch. None
+        found, closed or merged: blocked. (5) The issue: `issue`, else the
+        `Closes #<n>` of the PR body. Without an issue number there is no
+        scenario naming: blocked. (6) `rtk git status --porcelain` not empty
+        is blocked. The current branch must be the PR head; otherwise blocked
+        (the flow checks it out, the Editor is on this checkout). (7) The
+        criteria: every `CA-n` of the issue with its text and whether it is
+        tagged `needs-feel-check`, and the T-n scenarios marked playable.
+        (8) The scenario files already present under
+        Assets/Tests/Playtest/Scenarios/ named issue-<n>-ca<k>.json. (9) The
+        test round: 1 + the number of PR comments containing
+        `<!-- unity-test`. (10) The PlaytestDriver probes and commands the
+        game offers (the classes with [PlaytestProbe] / [PlaytestCommand] in
+        Assets/Scripts/Playtest/, with their fields) and the « Observabilité
+        pour le test Unity » section of the PR body. Write context.json with
+        repo, projectRoot, baseBranch, branch, issue, pr, test_round,
+        criteria [{id, text, feel_check}], existing_scenarios, probes,
+        commands and config.
+        Memory (contract C10, templates/recipes/memory.md of the skill): with the issue number, run `rtk aidp memory context --project "<projectRoot>" --issue GH-<issue> --route code --stage test --budget 2000` (without an issue, drop `--issue`) and save its output as memory-context.md in your stage dir, unchanged; if the command fails, write memory-context.md holding only « Mémoire indisponible : <cause> » and go on. Read the BIBLE by its index (00_INDEX) and get any passage you need with `rtk aidp rag search "<query>" --project "<projectRoot>" --source bible --budget 1500`, never whole.
+    outputs: [context.json, memory-context.md]
+
+  - name: test
+    agent: unity-playtester
+    model: sonnet
+    needs: [prepare]
+    scope: { mode: repo_wide }
+    policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
+      - "Memory proposals: write memory-proposals.json (`{\"proposals\": []}` when nothing qualifies), 5 max, non-obvious reusable lessons only, as templates/recipes/memory.md §3 says."
+      - "Never edit game code, a scene, a prefab or an asset, and never save one. The only files you may add to the repository are the scenario files Assets/Tests/Playtest/Scenarios/issue-<n>-ca<k>.json (with their .meta): commit those alone and push them on the PR's branch, never force."
+      - "No computer use, no screenshot-driven play: the scenarios, the probes and the result files are the only source of truth. The Unity MCP is used to call the C1 and C2 entry points and to read the console."
+      - "The Unity Editor stays open: never run Unity in batchmode, never close it, never change branch. The only GitHub write allowed is ONE `rtk gh pr comment` per run."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      memory: "{{ stages.prepare.outputs.memory-context }}"
+      task: >
+        Test the PR `context.pr` in the open Unity Editor, as your section «
+        Lancé par aidp » and templates/recipes/unity-verify.md say; the recipe
+        is the contract of C1 and C2, follow it to the letter. (1) Compile
+        gate C1 (§1): errors mean the test stops there, passed false, with
+        the error list. (2) EditMode then PlayMode suites (§2): a failing
+        test is evidence, not a stop. (3) One scenario per CA-n of
+        `context.criteria`: keep the file of `context.existing_scenarios`
+        when it still matches the criterion, else write
+        Assets/Tests/Playtest/Scenarios/issue-<n>-ca<k>.json (C2 schema, §3)
+        using only the probes and commands of `context.probes` and
+        `context.commands`: a criterion whose probe or command does not
+        exist cannot be asserted, and that is a finding (result `fail`,
+        reason « sonde manquante: <name> », fix = implement it), never a
+        weaker assertion. A criterion tagged feel_check gets no scenario:
+        list it for the feel-check. Play each scenario through
+        `PlaytestBridge.Run` or the file bridge and read
+        .aidp/playtest/results/<id>.json (§3); a scenario that fails is rerun
+        once to rule out flakiness, and noted `flaky` if the two runs differ.
+        (4) Commit and push only the new or changed scenario files
+        (`test(playtest): scenarios issue-<n> (#<n>)`). (5) Post ONE PR
+        comment starting with `<!-- unity-test round=<test_round> -->` then
+        « ## Test Unity — tour <n> : passed | failed », the table criterion /
+        scenario / result / assert expressions with actual values / capture,
+        the EditMode and PlayMode counts, the compile gate result, the
+        feel-check criteria left to a human, and the captures (first five at
+        most). (6) Verdict: passed is true only when the compile gate is ok,
+        both suites pass, every CA-n scenario passes (the feel_check criteria
+        aside) and no probe is missing. Write test-report.md (the same
+        content as the comment, with the result files' paths) and
+        playtest.json {"round", "passed", "compile": {ok, errors, warnings},
+        "editmode": {total, failed}, "playmode": {total, failed},
+        "scenarios": [{id, criterion, result pass|fail|flaky|skipped,
+        asserts, captures}], "feel_check": [ids], "comment_url"} and
+        result.json, the file the flows read: {"passed": <bool>, "report":
+        "test-report.md", "round": <n>, "failed": [scenario or test ids],
+        "feel_check": [ids], "comment_url": "<url>"}. Feel-check criteria
+        left after all this (others tested): reply blocked with « blocked:
+        feel-check » in the summary, signals.blocked_reason feel-check,
+        result.json with passed false, and everything above still written
+        and posted. Unity MCP silent or no C1 / C2 result in time: reply
+        blocked, « blocked: unity-mcp » (§0), nothing posted. Otherwise reply
+        completed; mirror passed, round and failed (a count) as signals.
+    outputs: [playtest.json, test-report.md, result.json, memory-proposals.json]

@@ -1,0 +1,103 @@
+version: 5
+id: issue-refine
+description: >
+  Refines a GitHub issue that is not ready for an agent: the daemon parked it
+  under the label `aidp:triage` (ticket blocked `needs-refine`) because its
+  body has no numbered acceptance criteria `CA-n`. The skill
+  github-issue-ticket rewrites the body (precise technical description, files,
+  types, signatures, numbered acceptance criteria CA-n, test scenarios mapped
+  to each criterion, Unity-aware, Editor manual actions), the pipeline writes
+  it back on the issue with `gh issue edit --body-file`, then swaps the state
+  label `aidp:triage` for `aidp:ready` so the next sync makes the ticket
+  `todo` again. The original body stays under a `<details>` block at the end
+  of the new one. Started by the « Affiner » button of aidp-studio or by
+  `aidp ticket start`; one issue per run.
+
+  Agent: executor, following the skill github-issue-ticket. Reads the
+  repository (read only) to ground the description in real files and types.
+  The only GitHub writes: the issue body, the state label, one comment.
+inputs:
+  issue: { required: true, kind: string, description: "GitHub issue number to refine (the ticket GH-<n>)." }
+  repo: { required: false, kind: string, default: "", description: "Repository as owner/name. Empty: the repository of the working directory." }
+  feature: { required: false, kind: string, description: "Ticket label; names the vault run folder." }
+settings:
+  knowledge_graph:
+    enabled: false
+stages:
+  - name: prepare
+    agent: executor
+    model: haiku
+    scope: { mode: stage_dir_only }
+    policy:
+      - "Never ask the user a question. Decide open points yourself and record them as assumptions."
+      - "Read only: no GitHub write, no commit, no branch switch."
+    inputs:
+      issue: "{{ inputs.issue }}"
+      repo: "{{ inputs.repo }}"
+    with:
+      instructions: >
+        (1) The repository: `repo` when given, else `rtk gh repo view --json
+        nameWithOwner`. (2) `rtk gh issue view <issue> --repo <repo> --json
+        number,title,body,labels,state,milestone`. A closed issue, or one
+        whose labels do not include `aidp:triage`: blocked with the reason.
+        (3) `rtk gh issue list --repo <repo> --state all --limit 30 --json
+        number,title,labels` to see the neighbouring tickets and their
+        vocabulary. Write context.json with repo, issue, title, body (the
+        original, verbatim), labels, milestone and has_criteria (true when
+        the body already names a `CA-n`).
+    outputs: [context.json]
+
+  - name: refine
+    agent: executor
+    model: sonnet
+    needs: [prepare]
+    skills: [github-issue-ticket, unity-csharp-dev]
+    scope: { mode: stage_dir_only }
+    policy:
+      - "Never ask the user a question. Decide open points yourself and list them under « Hypothèses » in the new body."
+      - "Read only on the repository: no commit, no push, no branch switch."
+      - "Do not create a new issue: the existing one is rewritten in place."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      task: >
+        Rewrite the body of the issue `context.issue` as the skill
+        github-issue-ticket demands, without creating anything on GitHub:
+        keep the intent and every fact of the original body, make the
+        description technical and precise (files, types, signatures, values,
+        found by reading the repository), write the numbered acceptance
+        criteria `CA-1`, `CA-2`... (each testable, at least one), the test
+        scenarios `T-n` each mapped to a criterion, the manual actions in the
+        Editor, and « Hors périmètre ». Keep every dependency line of the
+        original (« Dépend de #n », « Blocked by #n ») unchanged. Append the
+        original body inside `<details><summary>Corps d'origine</summary>`.
+        Write new-body.md (the whole new body) and refine.json: {"issue":
+        <n>, "criteria": <count of CA-n>, "tests": <count of T-n>,
+        "assumptions": [<strings>], "ready": <true when criteria >= 1>}.
+    outputs: [new-body.md, refine.json]
+
+  - name: publish
+    agent: executor
+    model: haiku
+    needs: [refine]
+    scope: { mode: stage_dir_only }
+    policy:
+      - "Allowed GitHub writes: `gh issue edit` of the body and of the state label, and ONE `gh issue comment`. Nothing else."
+      - "No commit, no push."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      refine: "{{ stages.refine.outputs.refine }}"
+      body: "{{ stages.refine.outputs.new-body }}"
+    with:
+      instructions: >
+        (1) If refine.ready is false: write publish.json {"published":
+        false, "reason": "no acceptance criterion"} and stop, labels
+        untouched. (2) `rtk gh issue edit <issue> --repo <repo> --body-file
+        <new-body.md>`. (3) Swap the state label in one call: `rtk gh issue
+        edit <issue> --repo <repo> --add-label aidp:ready --remove-label
+        aidp:triage` (no other `aidp:*` label may remain). (4) One comment:
+        `rtk gh issue comment <issue> --repo <repo> --body-file
+        <comment.md>` where comment.md says « Issue affinée par aidp »,
+        lists the criteria count, the tests count and the assumptions.
+        Write publish.json {"published": true, "issue": <n>, "criteria":
+        <n>, "label": "aidp:ready", "comment_url": "<url>"}.
+    outputs: [publish.json]

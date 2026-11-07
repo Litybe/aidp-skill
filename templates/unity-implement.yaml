@@ -1,0 +1,238 @@
+version: 5
+id: unity-implement
+description: >
+  Implement a GitHub issue (or a plain-text demand) in a Unity project and
+  open the draft PR, with no playtest: the review and the Unity test are
+  separate pipelines of the `game-code` flow (`unity-review`, `unity-test`).
+  prepare → [repro, only when track is bug] → plan → implement (code, EditMode
+  tests, compile gate C1, branch, draft PR `Closes #n`) → report.
+
+  `track: bug` inserts the `repro` stage first: write the test that reproduces
+  the bug and check that it FAILS (red) on the unfixed code; the implementation
+  must then turn it green. `track: standard` (default) skips it.
+
+  Agents: planner (generic, with the unity-csharp-dev skill) and
+  unity-issue-implementer. They follow unity-csharp-dev, unity-shader-hlsl for
+  shaders, and the shared recipe templates/recipes/unity-verify.md of the
+  skill. The Unity Editor stays open for the whole queue: nothing is compiled
+  in batchmode; the compile gate C1 goes through the Unity MCP (package
+  com.aidp.playtest). Unity MCP silent: the stage ends `blocked: unity-mcp`.
+  The `unity-editor` resource is declared by the flow, not here.
+
+  Outputs read by the flows (C4): `pr` (pr.json, with the PR number), `branch`
+  and `summary` (result.json of the report stage, keys pr / branch / summary).
+  Never merges, never marks the PR ready.
+inputs:
+  issue: { required: false, kind: string, default: "", description: "GitHub issue number to implement. Empty: the demand is `prompt`." }
+  prompt: { required: false, kind: string, default: "", description: "Plain-text demand when there is no GitHub issue (a local ticket body)." }
+  track: { required: false, kind: enum, values: [standard, bug], default: standard, description: "bug: write the test that reproduces the bug and check it fails (stage repro) before planning. standard: straight to the plan." }
+  feature: { required: false, kind: string, description: "Feature or ticket label; names the vault run folder." }
+settings:
+  knowledge_graph:
+    enabled: false
+stages:
+  - name: prepare
+    agent: executor
+    model: haiku
+    scope: { mode: stage_dir_only }
+    policy:
+      - "Never ask the user a question. Decide open points yourself and record them as assumptions."
+      - "Read only: no commit, no push, no branch switch, no GitHub write."
+    inputs:
+      issue: "{{ inputs.issue }}"
+      prompt: "{{ inputs.prompt }}"
+      track: "{{ inputs.track }}"
+    with:
+      instructions: >
+        Prepare the run as section 1 of
+        ~/.claude/skills/unity-issue-workflow/SKILL.md does, without asking
+        anything. (1) The working directory must hold Assets/ and
+        ProjectSettings/; otherwise report blocked. (2) `rtk gh auth status`,
+        then `rtk gh repo view --json nameWithOwner,defaultBranchRef`. (3)
+        Read .claude/unity-workflow.json and fill the defaults of
+        ~/.claude/skills/unity-issue-workflow/references/config.md; absent
+        file means all defaults. (4) With an `issue`, `rtk gh issue view`; a
+        closed issue is blocked. With neither `issue` nor `prompt`, blocked.
+        (5) `rtk git status --porcelain` not empty is blocked. (6) Branch:
+        when the current branch differs from the base branch, keep it
+        (`branch_exists: true`); otherwise derive `<prefix><n>-<slug>` from
+        branchPrefixes and the issue labels, the slug being the title (or the
+        prompt's first line) in ASCII kebab-case, 40 characters at most. (7)
+        Look for a PR already linked to the issue (references/github.md) and
+        record it, or null. (8) Do NOT compile or open Unity here and do not
+        look for the Editor: the Unity stages do (the Editor stays open,
+        nothing runs in batchmode). Write context.json with repo,
+        projectRoot (absolute), baseBranch, branch, branch_exists, issue,
+        prompt, track, pr (number or null) and config (defaults filled in).
+        Memory (contract C10, templates/recipes/memory.md of the skill): with the issue number, run `rtk aidp memory context --project "<projectRoot>" --issue GH-<issue> --route code --stage plan --budget 2000` (without an issue, drop `--issue`) and save its output as memory-context.md in your stage dir, unchanged; if the command fails, write memory-context.md holding only « Mémoire indisponible : <cause> » and go on. Read the BIBLE by its index (00_INDEX) and get any passage you need with `rtk aidp rag search "<query>" --project "<projectRoot>" --source bible --budget 1500`, never whole.
+    outputs: [context.json, memory-context.md]
+
+  # Bug track only: the failing test comes before any plan or fix. A skipped
+  # stage leaves `repro` empty for the plan and the implementer.
+  - name: repro
+    agent: unity-issue-implementer
+    model: sonnet
+    needs: [prepare]
+    scope: { mode: repo_wide }
+    when: "{{ inputs.track == 'bug' }}"
+    policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
+      - "Write the reproduction test ONLY: never touch the code under test, never fix the bug."
+      - "Commit locally on the run's branch (`test(repro): ...`) but do NOT push and do NOT open a PR: the implement stage does."
+      - "The Unity Editor stays open: never run Unity in batchmode, never close it. Compile through the gate C1 of templates/recipes/unity-verify.md."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      memory: "{{ stages.prepare.outputs.memory-context }}"
+      task: >
+        Reproduce the bug of the demand of `context` (the issue via `rtk gh
+        issue view <issue> --repo <repo> --comments`, else `prompt`). Create
+        the branch `context.branch` when `context.branch_exists` is false
+        (from the base branch), as your section « Lancé par aidp » says. Read
+        the code the bug touches, then write ONE focused test that encodes
+        the correct behaviour and so fails today: an EditMode test under the
+        testsRoot of the config when the bug lives in a service or a model;
+        a PlaytestDriver scenario
+        Assets/Tests/Playtest/Scenarios/issue-<n>-repro.json (schema C2 of
+        templates/recipes/unity-verify.md §3) when it only shows at runtime.
+        Run it as templates/recipes/unity-verify.md says (compile gate C1,
+        then the test through the open Editor) and check that it is RED for
+        the right reason: the assertion on the buggy behaviour, not a
+        compile error, a missing setup or an unrelated exception. Not red
+        (the bug does not reproduce, or the test cannot be made to fail for
+        the right reason after two attempts): do not commit anything, reply
+        blocked with « blocked: no-repro » in the summary, the evidence in
+        repro.json and the reason in signals.blocked_reason. Red: commit the
+        test and its .meta locally. Unity MCP silent: « blocked: unity-mcp »
+        (templates/recipes/unity-verify.md §0). Write repro.json: {"test":
+        "<fully qualified name or scenario id>", "file": "<path>", "kind":
+        "editmode|scenario", "red": true, "failure": "<the failing assertion
+        message>", "commit": "<sha>", "compile": {ok, warnings,
+        durationMs}}. Mirror red as signals.red.
+    outputs: [repro.json]
+
+  # Plan before code: the planner reads the issue, the contextDocs and the code it touches and writes
+  # the implementation plan the implementer follows, plus the scenario table unity-test turns into
+  # PlaytestDriver scenarios later.
+  - name: plan
+    agent: planner
+    model: opus
+    skills: [unity-csharp-dev]
+    needs: [prepare, repro]
+    scope: { mode: stage_dir_only }
+    with: { mode: feature }
+    policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
+      - "Never ask the user a question. Decide open points yourself and record them in the plan's Assumptions section."
+      - "Read only: no commit, no push, no branch switch, no GitHub write, no file written outside the stage dir."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      memory: "{{ stages.prepare.outputs.memory-context }}"
+      repro: "{{ stages.repro.outputs.repro }}"
+      instructions: >
+        Plan the implementation of the demand of `context` (the issue via
+        `rtk gh issue view <issue> --repo <repo> --comments`, else `prompt`)
+        in this Unity project. `repro`, when its file exists (bug track only), is the failing
+        test of the bug track: the plan's goal is to turn it green without
+        weakening it. Read the contextDocs of the config that touch the
+        subject, then the code the demand touches and its neighbours (scopes,
+        services, views, configs, ScriptableObjects, tests under testsRoot,
+        Assets/Scripts/Playtest). Follow the unity-csharp-dev skill (layers
+        Model → Config → Repository → Service → Presenter → View → Scope,
+        VContainer, no magic values, tunable values in ScriptableObjects)
+        and, for shader work,
+        ~/.claude/skills/unity-shader-hlsl/SKILL.md. An issue written with
+        the github-issue-ticket template (sections « Description technique »,
+        CA-n, T-n): its Files table, signatures and values are the plan's
+        frame, « Hors périmètre » is forbidden. Write plan.md in the language
+        of config.language with these sections: (1) Critères d'acceptation —
+        every CA-n (or the criteria the text implies), each with how it will
+        be met, and flag the ones the issue marks `needs-feel-check`; (2)
+        Fichiers — table path / create|modify / role, in implementation
+        order, every new file under Assets/ noted as needing its .meta; (3)
+        Étapes — ordered, one verifiable change each, citing the existing
+        code to reuse with its path; (4) Tests EditMode — one per behaviour
+        of each service created or modified, with test name, data and
+        expected result (and the T-n it covers); (5) Observabilité pour le
+        test Unity — for every CA-n, the PlaytestDriver probes
+        (IPlaytestProbe, [PlaytestProbe("name")]) and commands
+        (IPlaytestCommand) the later `unity-test` pipeline needs to assert
+        it, each with its fields and where it lives
+        (Assets/Scripts/Playtest/); the ones that already exist are reused,
+        the missing ones are files of section 2; the scenario itself
+        (scene, setup, steps, asserts) is NOT written here; (6) Actions
+        manuelles dans l'éditeur — what only the Editor can do (assign a
+        reference, create a ScriptableObject asset, add a component or
+        LifetimeScope to a scene), each doable in one minute; (7) Risques et
+        hypothèses. No plan.json: Unity has one Editor per project, the
+        implementation runs as one stage.
+    outputs: [plan.md]
+
+  - name: implement
+    agent: unity-issue-implementer
+    model: opus
+    needs: [plan]
+    scope: { mode: repo_wide }
+    policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
+      - "The Unity Editor stays open: never run Unity in batchmode, never close the Editor, never change branch while it is open."
+      - "No playtest and no computer use: the Unity test is the `unity-test` pipeline, later in the flow."
+      - "Never mark the PR ready, never merge."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      memory: "{{ stages.prepare.outputs.memory-context }}"
+      plan: "{{ stages.plan.outputs.plan }}"
+      repro: "{{ stages.repro.outputs.repro }}"
+      task: >
+        Implement the demand of `context` and open the draft PR, as your
+        section « Lancé par aidp » says. Follow `plan` (plan.md): its files,
+        order, EditMode tests, probes and manual actions are your plan; a
+        deviation is an assumption with its reason. When `repro` is not
+        empty (bug track), its test is already committed on the branch: the
+        fix must turn it green, never edit or delete it to pass, and report
+        its result in implementation.json. Verify with the compile gate C1
+        and the EditMode tests as templates/recipes/unity-verify.md §1-§2
+        say (the Editor is open: no batchmode); fix every error and every
+        failing test before the PR. Unity MCP silent or compile gate
+        without result: reply blocked, « blocked: unity-mcp » (§0). The PR is
+        a DRAFT, its body ends with `Closes #<issue>` when there is an
+        issue, and holds the sections « Description », « Critères
+        d'acceptation » (CA-n with where it is met), « Vérification »
+        (compile gate C1 result, EditMode counts), « Actions manuelles dans
+        l'éditeur » and « Observabilité pour le test Unity » (the probes and
+        commands the plan lists). Do not write a « Scénarios de test » section
+        or a playtest: `unity-test` does it. When `context.pr` is set, the PR
+        exists: commit and push on its branch and update its body instead of
+        opening a new one. pr.json carries number, url, branch and
+        summary (one sentence on what was implemented). Reply completed with
+        signals pr (the number), branch.
+    outputs: [pr.json, implementation.json]
+
+  - name: report
+    agent: executor
+    model: haiku
+    needs: [implement]
+    scope: { mode: stage_dir_only }
+    policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
+      - "No GitHub write, no commit, no push. Never merge, never mark the PR ready."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      memory: "{{ stages.prepare.outputs.memory-context }}"
+      plan: "{{ stages.plan.outputs.plan }}"
+      repro: "{{ stages.repro.outputs.repro }}"
+      implementation: "{{ stages.implement.outputs.implementation }}"
+      pr: "{{ stages.implement.outputs.pr }}"
+    with:
+      instructions: >
+        Write report.md: PR link (draft), acceptance criteria covered (from
+        the plan and implementation.json), the compile gate C1 and EditMode
+        results that really ran, the reproduction test and its red → green
+        result when the `repro` file exists, manual actions in the Editor, the
+        implementer's assumptions, and the next step: `unity-review` on this
+        PR. Also write result.json, the file the flows read:
+        {"pr": <PR number>, "branch": "<PR head branch>", "summary": "<two
+        sentences: what was implemented, what is verified>", "track":
+        "<standard|bug>", "compile_ok": <bool>, "editmode_failed": <n>,
+        "repro_green": <bool or null when no repro>}. Mirror pr and branch
+        as signals.
+    outputs: [report.md, result.json]

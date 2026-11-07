@@ -130,6 +130,25 @@ Aucun Unity ; la PR reste en draft (`ready` et fusion = le flow). Jamais d'assou
 - Sortie : `result.json` `{pr, branch, summary, pushed}` ; `fix.json` porte le détail. Aucun constat
   ouvert : `pushed: false`, rien posté.
 
+## Flows : qui appelle quoi
+
+Quatre flows natifs dans `templates/flows/` (`game-code` pour les pipelines `unity-*`). Même forme :
+claim (`aidp:in-progress`) → `git.worktree` → `git.branch` → produire (`pushes: true`) → boucle revue
+(2 tours : `aidp:review`, pipeline de revue, `gh.issue_comment` du verdict, correction si
+`verdict == 'need-fix'`) → boucle test (2 tours : `aidp:testing`, test, commentaire, correction avec
+`report_from: test` si `passed == false`) → `gh.pr_ready` → `aidp:awaiting-merge` → `merge_approval`
+humain → `gh.merge` → `aidp:done` → `worktree.remove`.
+
+| Flow | Produire | Revue ⇄ correction | Test ⇄ correction | Verrou `unity-editor` |
+|---|---|---|---|---|
+| `game-art` | `art-produce` | `art-review` ⇄ `art-fix` | `art-import` ⇄ `art-fix` | sur `art-import` seul |
+| `game-map` | `map-produce` | `map-review` ⇄ `map-fix` | `map-test` ⇄ `map-fix` | sur `map-test` seul |
+| `game-doc` | `doc-write` | `doc-review` ⇄ `doc-fix` | aucun | aucun |
+
+Boucle épuisée : l'`until` de chaque boucle s'arrête aussi à `settings.max_*_rounds` (une boucle arrêtée par `max` seul escalade le run aussitôt et rien ne s'exécute après), puis label `aidp:blocked` et `fail` avec `kind: business` : le run finit `escalated` (sans `kind`, `failed`). Le dernier tour `need-fix` est corrigé mais pas re-revu : issue bloquée, un humain regarde. Le daemon passe `issue`, `track` et `route` aux pipelines (ticket GitHub) : aucun `with: { issue }` dans les flows. La revue seule ne tient
+pas l'éditeur ; le verrou (C3) est posé par l'étape du flow, jamais par le template. Les labels sont
+posés par `gh.issue_label`, les rapports par `gh.issue_comment` avec `cost_footer: true`.
+
 ## Mémoire et RAG (contrat C10)
 
 Recette : `templates/recipes/memory.md`. Les 15 pipelines `unity-implement`, `unity-review`, `unity-fix`,
@@ -164,4 +183,4 @@ Recette : `templates/recipes/memory.md`. Les 15 pipelines `unity-implement`, `un
 
 ## Écarts connus
 
-- `resource: unity-editor` (C3) n'est pas un champ de stage : à poser sur l'étape de flow.
+- `resource: unity-editor` (C3) n'est pas un champ de stage : posé sur les étapes de flow (game-art : art-import ; game-map : map-test).

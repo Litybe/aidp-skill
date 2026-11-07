@@ -149,6 +149,38 @@ Boucle épuisée : label `aidp:blocked`, puis l'action `fail` termine le run. La
 pas l'éditeur ; le verrou (C3) est posé par l'étape du flow, jamais par le template. Les labels sont
 posés par `gh.issue_label`, les rapports par `gh.issue_comment` avec `cost_footer: true`.
 
+## Mémoire et RAG (contrat C10)
+
+Recette : `templates/recipes/memory.md`. Les 15 pipelines `unity-implement`, `unity-review`, `unity-fix`,
+`unity-test`, `art-*` (`art-produce`, `art-review`, `art-fix`, `art-import`), `map-*` (`map-produce`,
+`map-review`, `map-fix`, `map-test`) et `doc-*` (`doc-write`, `doc-review`, `doc-fix`) la suivent.
+
+- **Lecture** : `prepare` lance `rtk aidp memory context --project "<projectRoot>" --issue GH-<n>
+  --route <code|art|map|doc> --stage <stage suivant> --budget 2000` et écrit la sortie telle quelle dans
+  `memory-context.md` (sortie du stage). Les stages suivants la reçoivent dans l'entrée `memory`
+  (`{{ stages.prepare.outputs.memory-context }}`). Le stage suivant nommé dans `--stage` est : `plan`
+  (`unity-implement`), `review` (`*-review`), `fix` (`*-fix`), `test` (`unity-test`), `brief`
+  (`art-produce`), `import` (`art-import`, `map-test`), `graph` (`map-produce`), `write` (`doc-write`).
+- **À la demande** : plus de lecture complète de la BIBLE ou du code. Index `00_INDEX`, puis
+  `rtk aidp rag search "<requête>" --source bible|code|run|... --budget 1500` et lecture des seules lignes citées
+  (`path:Lx-Ly`).
+- **Écriture** : `verdict` des `*-review` et de `unity-review`, `fix` des `*-fix` et de `unity-fix`,
+  `test` de `unity-test`, `report` de `art-import` et de `map-test` écrivent `memory-proposals.json`
+  (5 leçons au plus, non évidentes, réutilisables, portée précise, `confidence` honnête ; liste vide
+  admise). Le daemon l'ingère à la fin du run ; l'approbation reste humaine (CLI ou front) sauf
+  `evidence` >= 2 et `confidence` >= 0,8.
+- **Échec** : `memory-context.md` contient « Mémoire indisponible : <cause> », le run continue sans
+  mémoire et le rapport le signale. Jamais de `blocked` pour cela.
+- **Dépend du binaire** : `aidp memory ...` et `aidp rag ...` (lot P6, Rust) ; tant qu'ils manquent,
+  les stages suivent la voie d'échec ci-dessus.
+- **Cohabitation avec `knowledge-read` / `knowledge-update`** (fragments inchangés, utilisés par
+  `dev-aidp`, `dev-studio`, `knowledge-init`) : la base de connaissance (`<vault>/Knowledge/<repo>/`) garde
+  des notes longues par feature (règles, flux, carte du code) ; la mémoire garde des leçons courtes
+  (600 caractères) et ciblées par route et chemin. Les deux ne se remplacent pas : `knowledge-read`
+  résume une feature avant une découverte, `memory context` rappelle des pièges et décisions précis. Le
+  corpus RAG indexe les notes de connaissance (source `knowledge`) : `rag search --source knowledge`
+  les retrouve sans les relire en entier. Ne recopie pas une note de connaissance en mémoire.
+
 ## Écarts connus
 
 - `resource: unity-editor` (C3) n'est pas un champ de stage : posé sur les étapes de flow (game-art : art-import ; game-map : map-test).

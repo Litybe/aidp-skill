@@ -54,7 +54,8 @@ stages:
         comments headed « Revue avocat du diable ». Write context.json: repo,
         pr, issue, headSha, round, criteria (list of {id, text}), files
         (list of {path, local}).
-    outputs: [context.json]
+        Memory (contract C10, templates/recipes/memory.md of the skill): with the issue number, run `rtk aidp memory context --project "<projectRoot>" --issue GH-<issue> --route art --stage review --budget 2000` (without an issue, drop `--issue`) and save its output as memory-context.md in your stage dir, unchanged; if the command fails, write memory-context.md holding only « Mémoire indisponible : <cause> » and go on. Read the BIBLE by its index (00_INDEX) and get any passage you need with `rtk aidp rag search "<query>" --project "<projectRoot>" --source bible --budget 1500`, never whole.
+    outputs: [context.json, memory-context.md]
 
   - name: review
     agent: pixel-reviewer
@@ -63,11 +64,13 @@ stages:
     skills: [pixel-review, pixel-animation, pixel-palette, pixellab]
     scope: { mode: stage_dir_only }
     policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Read only: never modify the project, never use git, never call a paid Pixellab tool. Measure copies of the files in the stage dir."
       - "Devil's advocate: the PR is incomplete until each criterion is proven. Finding defects is success: reply completed once findings.json is written and re-read."
       - "Never use the Unity Editor (another run may hold it); .meta files are read as text."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"
+      memory: "{{ stages.prepare.outputs.memory-context }}"
       palette: "{{ inputs.palette }}"
       task: >
         Review the PR of `context` against the issue. (A) Per criterion, a
@@ -98,9 +101,12 @@ stages:
     needs: [review]
     scope: { mode: stage_dir_only }
     policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
+      - "Memory proposals: write memory-proposals.json (`{\"proposals\": []}` when nothing qualifies), 5 max, non-obvious reusable lessons only, as templates/recipes/memory.md §3 says."
       - "No GitHub write, no commit, no push."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"
+      memory: "{{ stages.prepare.outputs.memory-context }}"
       findings: "{{ stages.review.outputs.findings }}"
     with:
       instructions: >
@@ -116,4 +122,4 @@ stages:
         has more than 50 entries>}. Mirror verdict and findings (a count) as
         signals of the reply envelope. Status blocked: the reason goes in
         signals.blocked_reason.
-    outputs: [verdict.json, result.json]
+    outputs: [verdict.json, result.json, memory-proposals.json]

@@ -51,7 +51,8 @@ stages:
         (5) Round: 1 + the PR comments headed « Revue avocat du diable ».
         Write context.json: repo, pr, issue, headSha, round, criteria, files,
         reading_plan, owner_documents.
-    outputs: [context.json]
+        Memory (contract C10, templates/recipes/memory.md of the skill): with the issue number, run `rtk aidp memory context --project "<projectRoot>" --issue GH-<issue> --route doc --stage review --budget 2000` (without an issue, drop `--issue`) and save its output as memory-context.md in your stage dir, unchanged; if the command fails, write memory-context.md holding only « Mémoire indisponible : <cause> » and go on. Read the BIBLE by its index (00_INDEX) and get any passage you need with `rtk aidp rag search "<query>" --project "<projectRoot>" --source bible --budget 1500`, never whole.
+    outputs: [context.json, memory-context.md]
 
   - name: review
     agent: executor
@@ -59,11 +60,13 @@ stages:
     needs: [prepare]
     scope: { mode: stage_dir_only }
     policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Read only on the project: never edit a document, never use git, never open Unity."
       - "Devil's advocate: the change is not consistent until each check and each criterion is proven. Finding defects is success: reply completed once findings.json is written and re-read."
       - "Read the BIBLE by sections from the reading plan, not whole; cite file and section for every claim."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"
+      memory: "{{ stages.prepare.outputs.memory-context }}"
       task: >
         Read the reading plan, then the diff. (A) Canon: each changed
         statement against 01_canon and the owner document; on a conflict apply
@@ -93,9 +96,12 @@ stages:
     needs: [review]
     scope: { mode: stage_dir_only }
     policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
+      - "Memory proposals: write memory-proposals.json (`{\"proposals\": []}` when nothing qualifies), 5 max, non-obvious reusable lessons only, as templates/recipes/memory.md §3 says."
       - "No GitHub write, no commit, no push."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"
+      memory: "{{ stages.prepare.outputs.memory-context }}"
       findings: "{{ stages.review.outputs.findings }}"
     with:
       instructions: >
@@ -109,4 +115,4 @@ stages:
         has more than 50 entries>}. Mirror verdict and findings (a count) as
         signals of the reply envelope. Status blocked: the reason goes in
         signals.blocked_reason.
-    outputs: [verdict.json, result.json]
+    outputs: [verdict.json, result.json, memory-proposals.json]

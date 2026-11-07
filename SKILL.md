@@ -32,6 +32,13 @@ Jira, Confluence, Sonar, CI, Teams, Mongo, SQS, Datadog, deployment, Codex or Co
   (see `docs/gamedev-content-pipelines.md`), `dev-aidp` (aidp itself),
   `dev-studio` (the `aidp-studio` front), `knowledge-init`, the fragments `knowledge-read`,
   `knowledge-update` and `review`, and the demo `dev-exemple`. Flow: `perso-delivery`.
+- Memory and RAG (contract C10): the `unity-*`, `art-*`, `map-*` and `doc-*` pipelines read project memory in
+  `prepare` (`aidp memory context`, saved as `memory-context.md`, passed on as input `memory`), search the
+  corpus on demand with `aidp rag search` instead of reading the BIBLE or code whole, and their last
+  review, fix and test stages write `memory-proposals.json`. Recipe `templates/recipes/memory.md`; details in
+  `docs/gamedev-content-pipelines.md`. The fragments `knowledge-read` / `knowledge-update` stay: knowledge =
+  long per-feature notes in the vault, memory = short targeted lessons. If the `aidp memory` / `aidp rag`
+  commands fail, the run goes on without memory and says so in its report.
 - Disk: nothing is installed on C:. Skill `D:\AIDP\skill` (`AIDP_SKILL_ROOT`), binary `D:\AIDP\bin`,
   sources `D:\AIDP\src`, vault `D:\AIDP\Vault`, daemon state `D:\AIDP\gateway` (`AIDP_GATEWAY_DIR`),
   agents and commands in `<project>\.claude\`. Only `~/.claude/settings.json` (Stop hook) and

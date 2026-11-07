@@ -59,7 +59,8 @@ stages:
         « Revue avocat du diable ». Write context.json: repo, pr, issue,
         headSha, round, criteria, files (list of {path, local}), rooms
         touched (diff of level names), canon (list of {id, fact, source}).
-    outputs: [context.json]
+        Memory (contract C10, templates/recipes/memory.md of the skill): with the issue number, run `rtk aidp memory context --project "<projectRoot>" --issue GH-<issue> --route map --stage review --budget 2000` (without an issue, drop `--issue`) and save its output as memory-context.md in your stage dir, unchanged; if the command fails, write memory-context.md holding only « Mémoire indisponible : <cause> » and go on. Read the BIBLE by its index (00_INDEX) and get any passage you need with `rtk aidp rag search "<query>" --project "<projectRoot>" --source bible --budget 1500`, never whole.
+    outputs: [context.json, memory-context.md]
 
   - name: review
     agent: executor
@@ -68,11 +69,13 @@ stages:
     skills: [map-create, map-world-design, map-room-design, ldtk]
     scope: { mode: stage_dir_only }
     policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Read only on the project: run the scripts on the copies in the stage dir, never write the .ldtk or the graph, never use git, never open LDtk or Unity."
       - "Devil's advocate: the map is not ready until each axis and each criterion is proven. Finding defects is success: reply completed once findings.json is written and re-read."
       - "A claim is proven by a script output or a measure, never by reading the PR text alone."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"
+      memory: "{{ stages.prepare.outputs.memory-context }}"
       task: >
         Run, on the copies of `context.files`: `python
         ~/.claude/skills/map-world-design/scripts/validate_graph.py <graph>
@@ -112,9 +115,12 @@ stages:
     needs: [review]
     scope: { mode: stage_dir_only }
     policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
+      - "Memory proposals: write memory-proposals.json (`{\"proposals\": []}` when nothing qualifies), 5 max, non-obvious reusable lessons only, as templates/recipes/memory.md §3 says."
       - "No GitHub write, no commit, no push."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"
+      memory: "{{ stages.prepare.outputs.memory-context }}"
       findings: "{{ stages.review.outputs.findings }}"
     with:
       instructions: >
@@ -129,4 +135,4 @@ stages:
         has more than 50 entries>}. Mirror verdict and findings (a count) as
         signals of the reply envelope. Status blocked: the reason goes in
         signals.blocked_reason.
-    outputs: [verdict.json, result.json]
+    outputs: [verdict.json, result.json, memory-proposals.json]

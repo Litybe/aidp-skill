@@ -57,7 +57,8 @@ stages:
         context.json: repo, projectRoot, baseBranch, branch, issue, title,
         request, criteria, reading_plan (list of files), targets (list of
         files to edit), owner_documents.
-    outputs: [context.json]
+        Memory (contract C10, templates/recipes/memory.md of the skill): with the issue number, run `rtk aidp memory context --project "<projectRoot>" --issue GH-<issue> --route doc --stage write --budget 2000` (without an issue, drop `--issue`) and save its output as memory-context.md in your stage dir, unchanged; if the command fails, write memory-context.md holding only « Mémoire indisponible : <cause> » and go on. Read the BIBLE by its index (00_INDEX) and get any passage you need with `rtk aidp rag search "<query>" --project "<projectRoot>" --source bible --budget 1500`, never whole.
+    outputs: [context.json, memory-context.md]
 
   - name: write
     agent: executor
@@ -65,12 +66,14 @@ stages:
     needs: [prepare]
     scope: { mode: repo_wide }
     policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Never ask the user a question; decide open points and record them as assumptions."
       - "Edit documentation only (.claude/BIBLE/, Docs/, ROADMAP). No code, scene, asset or LDtk change."
       - "Read the context.reading_plan files first. 01_canon wins; then the owner document; a contradiction is noted in 99_revue_critique/, never erased. Do not rename identifiers."
       - "Do not commit. Keep the existing structure: one folder per document, sections as sub-files, a « Questions ouvertes » section at the end."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"
+      memory: "{{ stages.prepare.outputs.memory-context }}"
     with:
       instructions: >
         Apply `context.request` in the targets: keep identifier conventions
@@ -94,10 +97,12 @@ stages:
     needs: [write]
     scope: { mode: repo_wide }
     policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Never ask the user a question. Never merge, never mark the PR ready."
       - "Commit only the documentation files of write.json on the working branch; never the base branch."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"
+      memory: "{{ stages.prepare.outputs.memory-context }}"
       write: "{{ stages.write.outputs.write }}"
     with:
       instructions: >

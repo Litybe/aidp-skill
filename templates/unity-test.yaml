@@ -80,6 +80,7 @@ stages:
     policy:
       - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Memory proposals: write memory-proposals.json (`{\"proposals\": []}` when nothing qualifies), 5 max, non-obvious reusable lessons only, as templates/recipes/memory.md §3 says."
+      - "Scenarios never depend on level content: no `scene` field (default: PlaytestArena) and test objects posed by `spawn` (unity-verify.md §3); never modify a Level_* for a test."
       - "Never edit game code, a scene, a prefab or an asset, and never save one. The only files you may add to the repository are the scenario files Assets/Tests/Playtest/Scenarios/issue-<n>-ca<k>.json (with their .meta): commit those alone and push them on the PR's branch, never force."
       - "No computer use, no screenshot-driven play: the scenarios, the probes and the result files are the only source of truth. The file bridge is used to call the C1 and C2 entry points and to read the console."
       - "The Unity Editor stays open: never run Unity in batchmode, never close it, never change branch. The only GitHub write allowed is ONE `rtk gh pr comment` per run."
@@ -96,8 +97,9 @@ stages:
         `context.criteria`: keep the file of `context.existing_scenarios`
         when it still matches the criterion, else write
         Assets/Tests/Playtest/Scenarios/issue-<n>-ca<k>.json (C2 schema, §3)
-        using only the probes and commands of `context.probes` and
-        `context.commands`: a criterion whose probe or command does not
+        in the PlaytestArena scene (no `scene` field; test objects posed
+        by `spawn`, read by the `object` probe) using only the probes and
+        commands of `context.probes` and `context.commands` plus `spawn` and `object`: a criterion whose probe or command does not
         exist cannot be asserted, and that is a finding (result `fail`,
         reason « sonde manquante: <name> », fix = implement it), never a
         weaker assertion. A criterion tagged feel_check gets no scenario:

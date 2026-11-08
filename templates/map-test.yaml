@@ -112,7 +112,8 @@ stages:
     policy:
       - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Never ask the user a question. Drive the Editor through the Unity MCP and the file bridge; no computer use."
-      - "Only files under Assets/Tests/Playtest/Scenarios/ may be created or changed. No gameplay edit. A fail is reported, never worked around by loosening an assert."
+      - "Only files under Assets/Tests/Playtest/Scenarios/ may be created or changed. No gameplay edit."
+      - "Never modify a Level_* scene for a test: scenarios here run in `scene` (the map under test, the one exception to the arena rule); extra test objects go through `spawn`. A fail is reported, never worked around by loosening an assert."
       - "Never commit or push in this stage."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"

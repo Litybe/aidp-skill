@@ -86,6 +86,7 @@ stages:
       - "Memory proposals: write memory-proposals.json (`{\"proposals\": []}` when nothing qualifies), 5 max, non-obvious reusable lessons only, as templates/recipes/memory.md §3 says."
       - "The PR exists: never open a new one, never merge, never mark it ready."
       - "The Unity Editor stays open: never run Unity in batchmode, never close it, never change branch."
+      - "Scenarios use the PlaytestArena scene (no Level_* in `scene`) and `spawn` for test objects; never modify a Level_* for a test (unity-verify.md §3)."
       - "Never weaken, skip or delete a test or a PlaytestDriver scenario to make it pass; a scenario that is wrong is fixed only with the evidence in the report and said in the summary."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"

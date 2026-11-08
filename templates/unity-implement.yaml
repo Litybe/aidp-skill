@@ -56,7 +56,7 @@ stages:
         ~/.claude/skills/unity-issue-workflow/references/config.md; absent
         file means all defaults. (4) With an `issue`, `rtk gh issue view`; a
         closed issue is blocked. With neither `issue` nor `prompt`, blocked.
-        (5) `rtk git status --porcelain` not empty is blocked. (6) Branch:
+        (5) `rtk git status --porcelain`, ignoring untracked *.meta and what the Unity Editor rewrites alone (Packages/packages-lock.json, ProjectSettings/, UserSettings/), not empty is blocked. (6) Branch:
         when the current branch differs from the base branch, keep it
         (`branch_exists: true`); otherwise derive `<prefix><n>-<slug>` from
         branchPrefixes and the issue labels, the slug being the title (or the

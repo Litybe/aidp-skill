@@ -44,7 +44,7 @@ stages:
         given; else the PR linked to `issue` (references/github.md); else the
         open PR of the current branch. None found, closed or merged: blocked.
         (5) The issue: `issue`, else the `Closes #<n>` of the PR body. (6)
-        `rtk git status --porcelain` not empty: blocked. (7) What is left to
+        `rtk git status --porcelain`, ignoring untracked *.meta and what the Unity Editor rewrites alone (Packages/packages-lock.json, ProjectSettings/, UserSettings/), not empty: blocked. (7) What is left to
         fix (references/github.md, « Lire les fils non résolus »): the
         unresolved review threads, the out-of-diff comments of the last
         `unity-review-summary` review that no `unity-fix-summary` comment

@@ -54,7 +54,7 @@ stages:
         (references/github.md); else the open PR of the current branch. None
         found, closed or merged: blocked. (5) The issue: `issue`, else the
         `Closes #<n>` of the PR body. Without an issue number there is no
-        scenario naming: blocked. (6) `rtk git status --porcelain` not empty
+        scenario naming: blocked. (6) `rtk git status --porcelain`, ignoring untracked *.meta and what the Unity Editor rewrites alone (Packages/packages-lock.json, ProjectSettings/, UserSettings/), not empty
         is blocked. The current branch must be the PR head; otherwise blocked
         (the flow checks it out, the Editor is on this checkout). (7) The
         criteria: every `CA-n` of the issue with its text and whether it is

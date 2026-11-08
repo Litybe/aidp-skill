@@ -59,7 +59,7 @@ stages:
         file means all defaults; also default
         unity.closeEditorAfterPlaytest to false. (4) With an `issue`,
         `rtk gh issue view`; a closed issue is blocked. With neither `issue`
-        nor `prompt`, blocked. (5) `rtk git status --porcelain` not empty is
+        nor `prompt`, blocked. (5) `rtk git status --porcelain`, ignoring untracked *.meta and what the Unity Editor rewrites alone (Packages/packages-lock.json, ProjectSettings/, UserSettings/), not empty is
         blocked. (6) Temp/UnityLockfile present: the Editor is open, so the
         implementer's batchmode verification will fall back to the Unity
         MCP; record it as an assumption (do not change unity.verify). (7)

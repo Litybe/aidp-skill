@@ -16,7 +16,10 @@ description: >
   shaders, and the shared recipe templates/recipes/unity-verify.md of the
   skill. The Unity Editor stays open for the whole queue: nothing is compiled
   in batchmode; the compile gate C1 goes through the file bridge (package
-  com.aidp.playtest). Editor or file bridge silent: the stage ends `blocked: unity-editor`.
+  com.aidp.playtest). Editor open on `projectRoot` but file bridge silent: the stage ends
+  `blocked: unity-editor`. Editor NOT open on `projectRoot` (the dev lane runs in a worktree,
+  templates/recipes/unity-verify.md §0.0): no C1, no C8, no `blocked`; the stage writes the code
+  and the tests, reports `verification.compile = "deferred"` and the Unity test does the build.
   The `unity-editor` resource is declared by the flow, not here.
 
   Outputs read by the flows (C4): `pr` (pr.json, with the PR number), `branch`
@@ -102,8 +105,10 @@ stages:
         the right reason after two attempts): do not commit anything, reply
         blocked with « blocked: no-repro » in the summary, the evidence in
         repro.json and the reason in signals.blocked_reason. Red: commit the
-        test and its .meta locally. Editor or file bridge silent: « blocked: unity-editor »
-        (templates/recipes/unity-verify.md §0). Write repro.json: {"test":
+        test and its .meta locally. Editor open but file bridge silent: « blocked: unity-editor »
+        (templates/recipes/unity-verify.md §0). Editor not open on projectRoot (deferred mode,
+        §0.0): write and commit the test without running it, repro.json "red": null and
+        "compile": "deferred", signals.red null; no « blocked: no-repro » Write repro.json: {"test":
         "<fully qualified name or scenario id>", "file": "<path>", "kind":
         "editmode|scenario", "red": true, "failure": "<the failing assertion
         message>", "commit": "<sha>", "compile": {ok, warnings,
@@ -192,8 +197,10 @@ stages:
         its result in implementation.json. Verify with the compile gate C1
         and the EditMode tests as templates/recipes/unity-verify.md §1-§2
         say (the Editor is open: no batchmode); fix every error and every
-        failing test before the PR. Editor or file bridge silent or compile gate
-        without result: reply blocked, « blocked: unity-editor » (§0). The PR is
+        failing test before the PR. Editor open but file bridge silent or compile gate
+        without result: reply blocked, « blocked: unity-editor » (§0). Editor not open on
+        projectRoot (deferred mode, §0.0): no compile gate, no tests, no blocked; say « compile
+        et tests différés au test Unity » in « Vérification » and set compile "deferred" The PR is
         a DRAFT, its body ends with `Closes #<issue>` when there is an
         issue, and holds the sections « Description », « Critères
         d'acceptation » (CA-n with where it is met), « Vérification »
@@ -232,7 +239,7 @@ stages:
         PR. Also write result.json, the file the flows read:
         {"pr": <PR number>, "branch": "<PR head branch>", "summary": "<two
         sentences: what was implemented, what is verified>", "track":
-        "<standard|bug>", "compile_ok": <bool>, "editmode_failed": <n>,
+        "<standard|bug>", "compile_ok": <bool, null when deferred>, "editmode_failed": <n, null when deferred>,
         "repro_green": <bool or null when no repro>}. Mirror pr and branch
         as signals.
     outputs: [report.md, result.json]

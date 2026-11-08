@@ -16,6 +16,12 @@ description: >
   scene is a scratch one under Assets/Tests/Playtest/, never a gameplay
   scene, and is not part of the PR unless the issue asks for it.
 
+  The dev lane runs in a worktree with no Editor, so the PR reaches this test without the
+  `.meta` files Unity generates on import. This stage therefore COMMITS AND PUSHES, on the
+  branch of the PR, the `.meta` of the PR's assets (sprites, animation clips, controllers) that
+  the Editor created or that it fixed. Nothing else is committed (no scratch scene, no
+  ProjectSettings, no Library).
+
   Outputs read by the flow (contract C4): result.json {passed, report} and
   the Markdown report report.md, with the captures, in the stage dir.
 inputs:
@@ -61,7 +67,7 @@ stages:
       - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Never ask the user a question. Drive the Editor through the file bridge; use the Unity MCP only if its tools are present; no computer use."
       - "Never edit a gameplay scene, prefab or script. Only the scratch test scene and the .meta of the PR's sprites may change; list every change in the report."
-      - "Never commit or push, never switch branch. Leave the Editor in Edit Mode."
+      - "Never switch branch. Commit and push only the `.meta` files of the PR's assets that the Editor created or that you fixed (step 5), on the PR's branch, never with force. Leave the Editor in Edit Mode."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"
       memory: "{{ stages.prepare.outputs.memory-context }}"
@@ -88,6 +94,15 @@ stages:
         durationMs}, blocked (null or reason), sprites: per sprite {path, meta:
         {ppu, filter, mipmaps, compression, pivot, ok, fixed}, played (null or
         {tag, frames, ms, loops, ok}), captures, console}.
+        (5) `rtk git status --porcelain`: the `.meta` files that are new or
+        modified and belong to the PR's assets (the sprites, clips and
+        controllers of `context`, and their folders) are staged by name, never
+        `git add -A`. Commit them (`chore(art): .meta générés par l'éditeur
+        (#<issue>)`, French) and `rtk git push` on the current branch (the PR
+        head; the flow holds the checkout on it). Record the commit in
+        import.json "metaCommit" ({sha, files}) or null when there was
+        nothing to commit. Any other modified file is left alone and listed in
+        the report. A refused push is `failed`, never forced.
     outputs: [import.json]
 
   - name: report

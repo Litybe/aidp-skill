@@ -19,8 +19,11 @@ description: >
   result.json of the fix stage (fix.json holds the details).
 
   Agent: unity-review-fixer. Shared recipe: templates/recipes/unity-verify.md.
-  Editor or file bridge silent: the stage ends `blocked: unity-editor`. The `unity-editor`
-  resource is declared by the flow.
+  Editor open but file bridge silent: the stage ends `blocked: unity-editor`. In the review
+  loop of a dev flow (`report_from: review`, worktree, no editor open on `projectRoot`:
+  templates/recipes/unity-verify.md §0.0) the stage runs no C1 and no C8, reports
+  `verification.compile = "deferred"` and never blocks for that. `report_from: test` runs in the
+  main checkout of the test lane, editor open: compile gate and tests as before.
 inputs:
   issue: { required: false, kind: string, default: "", description: "GitHub issue number; the PR linked to it is fixed." }
   pr: { required: false, kind: string, default: "", description: "PR number. Empty: the PR linked to `issue`, else the open PR of the current branch." }
@@ -102,8 +105,10 @@ stages:
         Assets/Scripts/Playtest/), never the expectation. After every batch of
         edits run the compile gate C1 and the EditMode tests as
         templates/recipes/unity-verify.md §1-§2 say; a fix that does not
-        compile is not pushed. Editor or file bridge silent: reply blocked, « blocked:
-        unity-mcp ». Commit (`fix(review|test): ... (#<issue>)`), push on the
+        compile is not pushed. Editor open but file bridge silent: reply blocked, « blocked:
+        unity-editor ». Editor not open on projectRoot (review loop in a worktree, deferred mode,
+        §0.0): no C1, no C8, no blocked; re-read your edits with care, set "compile": "deferred",
+        "tests": "deferred" in fix.json Commit (`fix(review|test): ... (#<issue>)`), push on the
         PR's branch (never force), reply on EACH review thread with what you
         did and the commit, resolve the fixed ones, leave a thread open with
         the reason when you did not fix it (wontfix with evidence, or

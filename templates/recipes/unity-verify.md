@@ -12,20 +12,23 @@ Chemin de ce fichier : `<skill_root>/templates/recipes/unity-verify.md`
 Les chemins `.aidp/...` sont relatifs à la **racine du projet Unity** (`context.projectRoot`), jamais
 au dossier de stage. `.aidp/` est ignoré par git : ne le commite jamais.
 
-## 0. Joindre l'éditeur (MCP Unity)
+## 0. Joindre l'éditeur (pont fichier)
 
-Les outils `mcp__unity-mcp__Unity_*` sont différés : charge-les avec ToolSearch
-(`select:mcp__unity-mcp__Unity_RunCommand,mcp__unity-mcp__Unity_ManageEditor,mcp__unity-mcp__Unity_ReadConsole`).
+Les sessions headless (`claude -p`) n'ont pas le MCP Unity : le canal officiel est le **pont fichier**
+du package `com.aidp.playtest`, ouvert dans l'éditeur (requêtes dans `.aidp/*/requests/`, résultats
+dans `.aidp/*/results/`). Le MCP (`mcp__unity-mcp__Unity_*`) n'est jamais une condition : ne le charge
+que si ses outils sont déjà là, et n'attends pas sa connexion.
 
-1. `Unity_ManageEditor` `{ Action: "GetProjectRoot" }` doit répondre avec `context.projectRoot`.
-2. **MCP muet** (outil absent, erreur de connexion, délai dépassé) ou **autre projet** ouvert :
-   arrête-toi. Réponds `status: blocked`, `signals.blocked_reason: "unity-mcp"`, avec dans `summary`
-   « blocked: unity-mcp » et la cause (outil introuvable, MCP injoignable, projet différent). Ne
-   lance pas Unity, ne tente pas le batchmode, ne passe pas au computer use pour compiler.
+1. `rtk curl -s http://127.0.0.1:3001/api/unity/status` : `editor.running` doit valoir `true` et
+   `editor.projectPath` désigner `context.projectRoot` (casse et `/`/`\` ignorés). Si la route ne répond
+   pas, regarde le process `Unity.exe` et sa ligne de commande (`-projectpath`).
+2. **Éditeur fermé** ou **autre projet** ouvert : arrête-toi. Réponds `status: blocked`,
+   `signals.blocked_reason: "unity-editor"`, avec « blocked: unity-editor » et la cause dans `summary`.
+   Ne lance pas Unity, pas de batchmode, pas de computer use pour compiler.
 3. Le flow `game-*` travaille dans le checkout principal du projet (`context.projectRoot`), là où
    l'éditeur est ouvert : il a déjà basculé ce checkout sur la branche de l'issue (`git.checkout`) et
    tient le verrou `unity-editor` jusqu'au retour sur la base. Vérifie que l'éditeur est ouvert sur
-   `projectRoot` (`GetProjectRoot`) et que la branche courante est celle de l'issue / de la PR
+   `projectRoot` (route `unity/status`, §0.1) et que la branche courante est celle de l'issue / de la PR
    (`rtk git branch --show-current`). Sinon `status: blocked`, `signals.blocked_reason: "unity-branch"`,
    « blocked: unity-branch » et les deux branches dans `summary`. **Jamais de `git switch` /
    `git checkout` de branche dans un stage** : la bascule est faite par le flow, pas par toi.
@@ -35,13 +38,9 @@ Les outils `mcp__unity-mcp__Unity_*` sont différés : charge-les avec ToolSearc
 Une compilation = une requête identifiée par un `requestId` unique
 (`<stage>-<epoch ms>`, ASCII, sans espace).
 
-1. Appel par le MCP, avec `Unity_RunCommand` (gabarit `CommandScript` de l'outil) :
-   ```csharp
-   Aidp.Playtest.Editor.CompileGate.Request("<requestId>");
-   ```
-   Retour immédiat : la compilation n'est pas finie.
-   Repli si `Unity_RunCommand` refuse : dépose `.aidp/compile/requests/<requestId>.json` contenant
-   `{}` (le pont fichier le prend).
+1. Dépose `.aidp/compile/requests/<requestId>.json` contenant `{}` : le pont fichier le prend. Écris
+   le fichier une seule fois, d'un coup (écris-le sous un nom temporaire puis renomme-le). Le pont peut
+   mettre quelques secondes à répondre pendant un domain reload.
 2. Attends `.aidp/compile/results/<requestId>.json` : teste sa présence toutes les 5 s, **timeout
    180 s**. Une éventuelle recompilation ne démarre pas tant que le fichier n'existe pas.
 3. Lis-le :
@@ -52,33 +51,27 @@ Une compilation = une requête identifiée par un `requestId` unique
    - `ok: true` : compile gate vert. Les warnings des fichiers que tu as touchés se corrigent aussi.
    - `ok: false` : corrige chaque erreur (`file:line`) et relance une **nouvelle** requête. Au plus
      5 requêtes par stage ; ensuite le stage échoue (`status: failed`) avec la dernière liste.
-   - Pas de fichier au bout de 180 s : `Unity_ReadConsole` `{ Types: ["Error"] }` pour diagnostiquer
-     une fenêtre modale ou un domain reload bloqué, puis sors `blocked: unity-mcp` (la compilation
-     ne répond plus).
+   - Pas de fichier au bout de 180 s : regarde la fin de `<projectRoot>/Logs/Editor.log` (fenêtre
+     modale, domain reload bloqué, package absent), puis sors `blocked: unity-editor`.
 4. Rapporte dans le JSON du stage : `verification.compile` = `{ ok, errors, warnings, durationMs,
    requestId }`. Ne déclare jamais `ok` pour une compilation qui n'a pas tourné.
 
-Shaders : le gate C1 les couvre si Unity les compile ; ajoute `Unity_ReadConsole` pour `Shader error in`.
+Shaders : le gate C1 les couvre si Unity les compile ; cherche `Shader error in` dans `Logs/Editor.log`.
 
 ## 2. Tests EditMode et PlayMode
 
 Après un compile gate vert seulement.
 
-- Lance les tests par l'éditeur ouvert (contrat C8), un `requestId` par mode
-  (`<stage>-<epoch ms>`) : `Unity_RunCommand` avec
-  ```csharp
-  Aidp.Playtest.Editor.TestGate.Request("<requestId>", "EditMode"); // puis "PlayMode"
-  ```
-  Retour immédiat. Repli si `Unity_RunCommand` refuse : dépose
-  `.aidp/test-results/requests/<requestId>-<mode>.json` contenant `{}` (le pont le prend). N'écris
-  pas à la main d'appel `TestRunnerApi`.
+- Lance les tests par l'éditeur ouvert (contrat C8), un `requestId` par mode (`<stage>-<epoch ms>`) :
+  dépose `.aidp/test-results/requests/<requestId>-<mode>.json` contenant `{}` (`<mode>` = `EditMode`
+  puis `PlayMode`), le pont le prend. N'écris pas à la main d'appel `TestRunnerApi`.
 - Attends `.aidp/test-results/<requestId>-<mode>.json` (timeout 300 s EditMode, 600 s PlayMode ;
   teste sa présence toutes les 5 s). Format :
   ```json
   { "id": "...", "mode": "EditMode", "total": 42, "passed": 41, "failed": 1, "skipped": 0, "durationMs": 9000,
     "failures": [ { "name": "Ns.Class.Test", "message": "...", "stack": "..." } ], "finishedAt": "..." }
   ```
-  Pas de fichier au délai : `blocked: unity-mcp`.
+  Pas de fichier au délai : `blocked: unity-editor`.
 - `total: 0` avec `"note": "no-tests"` (aucune assembly de tests du mode) : `tests: none` (pas un échec, mais dis-le).
 - Un test qui échoue est un échec du stage, sauf pour le stage `repro` où le rouge est attendu.
 - Un nouveau fichier sous `Assets/` a besoin de son `.meta` : l'éditeur ouvert l'a créé, `rtk git status`
@@ -109,9 +102,9 @@ Un scénario par critère `CA-n` de l'issue (et par `T-n` manuel jouable), en do
   point à implémenter (stage `implement` ou `fix`), pas à contourner par un test faux.
 
 Lancer un scénario :
-1. Par le MCP : `Unity_RunCommand` avec `Aidp.Playtest.Editor.PlaytestBridge.Run("<id>");` (le
-   scénario est cherché dans `Assets/Tests/Playtest/Scenarios/` puis dans `.aidp/playtest/requests/`).
-   Repli : dépose `.aidp/playtest/requests/<id>.json`, le pont (FileSystemWatcher) l'exécute.
+1. Dépose le scénario dans `.aidp/playtest/requests/<id>.json` (copie du fichier de
+   `Assets/Tests/Playtest/Scenarios/` pour un scénario de la bibliothèque) : le pont (FileSystemWatcher)
+   l'exécute et gère l'entrée et la sortie de Play Mode.
 2. Attends `.aidp/playtest/results/<id>.json` (timeout = `timeoutMs` du scénario + 60 s ; pas de
    polling plus serré que 3 s).
 3. Lis-le :
@@ -123,7 +116,7 @@ Lancer un scénario :
    `passed: false` ou `error` non nul = scénario KO ; garde `expr`, `actual`, `message` comme preuve.
    `gif: null` est normal quand `D:\DevTools\ffmpeg\bin\ffmpeg.exe` n'existe pas.
 4. Le résultat ne vient jamais d'une capture d'écran ni du computer use : seulement du fichier de
-   résultat. Pas de fichier au délai : `blocked: unity-mcp`.
+   résultat. Pas de fichier au délai : `blocked: unity-editor`.
 
 Preuves : mets dans le commentaire de PR le tableau scénario / critère / résultat / valeurs, et les
 captures utiles (copie-les sous `Docs/` ou joins-les selon `references/github.md` du skill
@@ -140,7 +133,7 @@ critères se testent normalement ; le stage conclut `blocked` avec `signals.bloc
 
 | Situation | Réponse du stage |
 |---|---|
-| MCP Unity muet, éditeur d'un autre projet, pas de résultat C1 / C2 au délai | `blocked`, `signals.blocked_reason: "unity-mcp"` |
+| Éditeur fermé ou sur un autre projet, pas de résultat C1 / C2 / C8 au délai | `blocked`, `signals.blocked_reason: "unity-editor"` |
 | Branche courante du checkout différente de celle de l'issue | `blocked`, `signals.blocked_reason: "unity-branch"` |
 | Critère `needs-feel-check` à juger | `blocked`, `signals.blocked_reason: "feel-check"` |
 | Erreurs de compilation que tu ne sais pas corriger en 5 requêtes | `failed`, liste `file:line` |

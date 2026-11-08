@@ -15,8 +15,8 @@ description: >
   unity-issue-implementer. They follow unity-csharp-dev, unity-shader-hlsl for
   shaders, and the shared recipe templates/recipes/unity-verify.md of the
   skill. The Unity Editor stays open for the whole queue: nothing is compiled
-  in batchmode; the compile gate C1 goes through the Unity MCP (package
-  com.aidp.playtest). Unity MCP silent: the stage ends `blocked: unity-mcp`.
+  in batchmode; the compile gate C1 goes through the file bridge (package
+  com.aidp.playtest). Editor or file bridge silent: the stage ends `blocked: unity-editor`.
   The `unity-editor` resource is declared by the flow, not here.
 
   Outputs read by the flows (C4): `pr` (pr.json, with the PR number), `branch`
@@ -102,7 +102,7 @@ stages:
         the right reason after two attempts): do not commit anything, reply
         blocked with « blocked: no-repro » in the summary, the evidence in
         repro.json and the reason in signals.blocked_reason. Red: commit the
-        test and its .meta locally. Unity MCP silent: « blocked: unity-mcp »
+        test and its .meta locally. Editor or file bridge silent: « blocked: unity-editor »
         (templates/recipes/unity-verify.md §0). Write repro.json: {"test":
         "<fully qualified name or scenario id>", "file": "<path>", "kind":
         "editmode|scenario", "red": true, "failure": "<the failing assertion
@@ -192,8 +192,8 @@ stages:
         its result in implementation.json. Verify with the compile gate C1
         and the EditMode tests as templates/recipes/unity-verify.md §1-§2
         say (the Editor is open: no batchmode); fix every error and every
-        failing test before the PR. Unity MCP silent or compile gate
-        without result: reply blocked, « blocked: unity-mcp » (§0). The PR is
+        failing test before the PR. Editor or file bridge silent or compile gate
+        without result: reply blocked, « blocked: unity-editor » (§0). The PR is
         a DRAFT, its body ends with `Closes #<issue>` when there is an
         issue, and holds the sections « Description », « Critères
         d'acceptation » (CA-n with where it is met), « Vérification »

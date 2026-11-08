@@ -19,7 +19,7 @@ description: >
   result.json of the fix stage (fix.json holds the details).
 
   Agent: unity-review-fixer. Shared recipe: templates/recipes/unity-verify.md.
-  Unity MCP silent: the stage ends `blocked: unity-mcp`. The `unity-editor`
+  Editor or file bridge silent: the stage ends `blocked: unity-editor`. The `unity-editor`
   resource is declared by the flow.
 inputs:
   issue: { required: false, kind: string, default: "", description: "GitHub issue number; the PR linked to it is fixed." }
@@ -102,7 +102,7 @@ stages:
         Assets/Scripts/Playtest/), never the expectation. After every batch of
         edits run the compile gate C1 and the EditMode tests as
         templates/recipes/unity-verify.md §1-§2 say; a fix that does not
-        compile is not pushed. Unity MCP silent: reply blocked, « blocked:
+        compile is not pushed. Editor or file bridge silent: reply blocked, « blocked:
         unity-mcp ». Commit (`fix(review|test): ... (#<issue>)`), push on the
         PR's branch (never force), reply on EACH review thread with what you
         did and the commit, resolve the fixed ones, leave a thread open with

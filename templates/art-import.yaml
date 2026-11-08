@@ -4,15 +4,15 @@ description: >
   Gamedev route `art`, test step (replaces the Unity playtest): proves that a
   pixel art asset of the PR works in Unity. Checks the .meta of every sprite
   (16 pixels per unit, filter Point, no mipmap, compression none, sprite mode
-  and pivot as the project profile says; fixes them through the Unity MCP
-  only when the importer does not already apply them), places the sprite in a
-  test scene, plays the animation, captures it, and runs the compile gate
-  (contract C1, usage in unity-verify.md of unity-issue-workflow).
+  and pivot as the project profile says; fixes them in the .meta text when
+  the importer does not already apply them) and runs the compile gate over the
+  file bridge (contract C1, templates/recipes/unity-verify.md). Scene placement
+  and Play Mode captures only run when the Unity MCP is available.
 
   The Unity Editor is held by the user: the flow step that runs this pipeline
   carries `resource: unity-editor` (contract C3; the lock is a flow concern,
   not a stage field). Without
-  the Editor or the Unity MCP the run reports `blocked: unity-mcp`. The test
+  the Editor the run reports `blocked: unity-editor`. The test
   scene is a scratch one under Assets/Tests/Playtest/, never a gameplay
   scene, and is not part of the PR unless the issue asks for it.
 
@@ -59,7 +59,7 @@ stages:
     scope: { mode: repo_wide }
     policy:
       - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
-      - "Never ask the user a question. Drive the Editor through the Unity MCP and the file bridge; no computer use."
+      - "Never ask the user a question. Drive the Editor through the file bridge; use the Unity MCP only if its tools are present; no computer use."
       - "Never edit a gameplay scene, prefab or script. Only the scratch test scene and the .meta of the PR's sprites may change; list every change in the report."
       - "Never commit or push, never switch branch. Leave the Editor in Edit Mode."
     inputs:
@@ -67,24 +67,27 @@ stages:
       memory: "{{ stages.prepare.outputs.memory-context }}"
       scene: "{{ inputs.scene }}"
       task: >
-        (1) Compile gate C1 first (Aidp.Playtest.Editor.CompileGate.Request
-        through Unity_RunCommand, then the result file under
-        .aidp/compile/results/; usage in unity-verify.md); not ok: failed with
-        the errors. (2) For each sprite of `context`: .meta pixelsPerUnit 16,
-        filterMode Point (0), mipmaps off, textureCompression None, sprite mode
-        and pivot as mcp__aseprite__project_profile / unity_validate say; a
-        wrong value is fixed through the Unity MCP (importer settings) and
-        noted. (3) Build or open `scene`, place each sprite in a
-        SpriteRenderer (sorting layer of the project), and for an animated
-        asset a clip or Animancer player on its tags; enter Play Mode, let each
-        animation play at least two loops (check frame durations and loop),
-        capture the Game view (Unity_Camera_Capture) at 1x and zoomed into the
-        stage dir, check there is no console error or warning from the asset
-        (Unity_ReadConsole), exit Play Mode. Missing Unity MCP or Editor: write
-        import.json with blocked "unity-mcp". Write import.json: compile
-        {ok, errors, durationMs}, blocked (null or reason), sprites: per sprite
-        {path, meta: {ppu, filter, mipmaps, compression, pivot, ok, fixed},
-        played: {tag, frames, ms, loops, ok}, captures, console}.
+        Headless session: the Unity MCP is not available, the channel is the
+        file bridge (templates/recipes/unity-verify.md). (0) Check the Editor
+        is open on projectRoot (unity-verify.md section 0); closed or another
+        project: write import.json with blocked "unity-editor". (1) Compile
+        gate C1 first: drop .aidp/compile/requests/<id>.json, read
+        .aidp/compile/results/<id>.json; not ok: failed with the errors.
+        (2) For each sprite of `context`: read its .meta as text and compare
+        with what mcp__aseprite__project_profile / unity_validate require
+        (16 pixels per unit, Point filter, no mipmaps, no compression, sprite
+        mode and pivot). A wrong value is fixed by editing the .meta text
+        (keep the guid) and noted; drop a new compile request so the Editor
+        reimports it, then re-read the .meta. (3) Read the end of
+        <projectRoot>/Logs/Editor.log for import errors or warnings about the
+        sprites. (4) Scene placement and Play Mode captures need the Unity MCP:
+        when its tools are absent, skip them and report played null with the
+        reason "headless: no Unity MCP"; do not count that as a failure. The
+        asset passes when the compile gate is ok, every .meta is ok and the log
+        holds no error for it. Write import.json: compile {ok, errors,
+        durationMs}, blocked (null or reason), sprites: per sprite {path, meta:
+        {ppu, filter, mipmaps, compression, pivot, ok, fixed}, played (null or
+        {tag, frames, ms, loops, ok}), captures, console}.
     outputs: [import.json]
 
   - name: report

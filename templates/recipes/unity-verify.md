@@ -112,11 +112,28 @@ Un scénario par critère `CA-n` de l'issue (et par `T-n` manuel jouable), en do
 `.aidp/playtest/requests/<id>.json` (même schéma, non commitée).
 
 ```json
-{ "id": "issue-214-ca2", "scene": "Assets/Scenes/Level_1.unity", "timeoutMs": 10000,
-  "setup": [ { "cmd": "teleport", "x": 12, "y": 3 }, { "cmd": "give", "ability": "dash" } ],
+{ "id": "issue-214-ca2", "timeoutMs": 10000,
+  "setup": [ { "cmd": "spawn", "prefab": "Assets/Prefab/Interactable/Shortcut/Levier.prefab", "x": 12, "y": 3, "name": "fixture1" },
+             { "cmd": "teleport", "x": 12, "y": 1 }, { "cmd": "give", "ability": "dash" } ],
   "steps": [ { "hold": "rightArrow", "ms": 300 }, { "press": "x" }, { "wait": 400 }, { "capture": "after-dash" } ],
-  "assert": [ "player.x > 17.5", { "expr": "player.grounded == true", "withinMs": 500 }, "player.hp == 3" ] }
+  "assert": [ "player.x > 17.5", { "expr": "player.grounded == true", "withinMs": 500 }, "player.hp == 3", "object.fixture1.exists == true" ] }
 ```
+
+- **Scène et objets : un scénario ne dépend jamais du contenu d'un niveau.** Sans champ `scene`, le
+  scénario joue dans l'arène `Assets/Tests/Playtest/Scenes/PlaytestArena.unity` (GameManager, joueur,
+  caméra et sol plat réels, joueur en (0, 1.5), sol de x -40 à 400) : **n'écris pas `scene`**, ou écris
+  exactement ce chemin. Aucun `Level_*` dans `scene`, et ne modifie jamais un `Level_*` (ni une scène,
+  ni un prefab) pour un test.
+- Les objets de test (levier, ennemi, objet à ramasser, plateforme...) se posent avec la commande
+  générique `spawn` dans `setup` : `{ "cmd": "spawn", "prefab": "Assets/.../X.prefab", "x": 12, "y": 3,
+  "name": "fixture1", "active": true }` (`name` optionnel, défaut = nom du prefab ; `z` et `active`
+  optionnels). Les objets posés sont détruits à la fin du scénario. Se place par rapport à l'arène :
+  `teleport` le joueur près de l'objet, ne compte pas sur une position de niveau.
+- Sonde générique `object` : `object.<name>.x`, `.y`, `.active`, `.exists` (`object.fixture1.exists == true`,
+  `object.fixture1.x ~= 12 ± 0.1`) ; `exists` vaut faux, sans erreur, quand l'objet n'existe plus.
+- Un prefab qui manque (`spawn: no prefab at ...`) est une erreur du scénario : corrige le chemin, ne
+  remplace pas par un `Level_*`. Une scène d'arène absente est un point à signaler (le jeu la génère par
+  `-executeMethod Game.Playtest.EditorTools.PlaytestArenaBuilder.Build`).
 
 - Steps : `hold` (touche + `ms`), `press`, `release`, `tap`, `wait` (ms), `capture` (nom). Touches =
   noms de `UnityEngine.InputSystem.Key` en camelCase ; manette `gamepad.<control>` en option.

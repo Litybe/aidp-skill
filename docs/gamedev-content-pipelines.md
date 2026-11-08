@@ -1,7 +1,7 @@
 # Pipelines de contenu gamedev : art, map, doc
 
 Lot P3 du plan gamedev. Onze templates `version: 5`, joués par le binaire `aidp` en sessions
-`claude -p` autonomes, appelés par les flows `game-art`, `game-map`, `game-doc`
+`claude -p` autonomes, appelés par les flows `game-art`, `game-map`, `game-doc` et leurs flows de test
 (plan `PLAN-GAMEDEV.md` §3.1, §4.2). Les pipelines `unity-*` et `issue-refine` sont décrits
 ailleurs ; le contrat d'usage du compile gate C1 et des scénarios C2 est dans `unity-verify.md`
 (skill `unity-issue-workflow`).
@@ -132,29 +132,36 @@ Aucun Unity ; la PR reste en draft (`ready` et fusion = le flow). Jamais d'assou
 
 ## Flows : qui appelle quoi
 
-Quatre flows natifs dans `templates/flows/` (`game-code` pour les pipelines `unity-*`). Même forme,
-`workspace: project` : **pas de worktree**, toutes les étapes tournent dans le checkout principal du
-projet (l'éditeur Unity de l'utilisateur y est ouvert). `git.checkout` (`checkout`) : checkout propre
+Deux voies (contrat C13). **Voie de dev**, en parallèle : `game-code`, `game-art`, `game-map` tournent en
+**worktree** (`workspace` par défaut), sans éditeur Unity. Claim (`aidp:in-progress`) → `git.worktree` →
+`git.branch` → produire (`pushes: true`, branche et PR draft poussées) → boucle revue (2 tours :
+`aidp:review`, pipeline de revue, `gh.issue_comment` du verdict, correction si `verdict == 'need-fix'`) →
+**stop** : `ticket.to_test` (label `aidp:to-test` et phase `to-test` du ticket) → `worktree.remove`, le flow
+finit `done`. Les stages de dev ne lancent ni compile gate C1 ni tests C8 (`verification.compile =
+"deferred"`, `unity-verify.md` §0.0).
+
+**Voie de test**, une issue à la fois par projet : le dispatcher lance le `test_flow` de la route
+(`routing.yaml`) quand la voie est libre (`dispatcher.test_slots`, 1). `game-test-code`, `game-test-art`,
+`game-test-map` : `workspace: project`, **pas de worktree**, toutes les étapes tournent dans le checkout principal
+du projet (l'éditeur Unity de l'utilisateur y est ouvert). `git.checkout` (`checkout`) : checkout propre
 obligatoire, sinon `blocked: dirty-checkout` (label `aidp:blocked`, commentaire d'issue listant les
-fichiers, run `escalated`) ; puis `git switch` sur la branche de l'issue (créée depuis la base si
-absente, reprise sinon). Ensuite : claim (`aidp:in-progress`) → produire (`pushes: true`) → boucle revue
-(2 tours : `aidp:review`, pipeline de revue, `gh.issue_comment` du verdict, correction si
-`verdict == 'need-fix'`) → boucle test (2 tours : `aidp:testing`, test, commentaire, correction avec
-`report_from: test` si `passed == false`) → `gh.pr_ready` → `aidp:awaiting-merge` → `git.restore`
-(retour sur la base si le checkout est propre, sinon laissé tel quel et dit dans un commentaire d'issue)
-→ `merge_approval` humain → `gh.merge` → `aidp:done`. Sur `escalated`, échec ou annulation, le daemon
-fait le même `git.restore`.
+fichiers, run `escalated`) ; puis `git switch` sur la branche de l'issue. Ensuite : boucle test (2 tours :
+`aidp:testing`, test, commentaire, correction avec `report_from: test` si `passed == false`) → `gh.pr_ready`
+→ `aidp:awaiting-merge` → `git.restore` (retour sur la base si le checkout est propre, sinon laissé tel quel
+et dit dans un commentaire d'issue) → `merge_approval` humain → `gh.merge` → `aidp:done`. Sur `escalated`,
+échec ou annulation, le daemon fait le même `git.restore`.
 
 **Verrou** : un run `workspace: project` tient la ressource `unity-editor:<projet>` de sa première
-étape (`git.checkout`) jusqu'au retour (`git.restore`, ou fin du run). Un second flow reste en
-`waiting_external` (`resource:unity-editor`) sur son `git.checkout`. Les étapes n'ont donc plus de clé
-`resource:` ; les stages ne changent jamais de branche.
+étape (`git.checkout`) jusqu'au retour (`git.restore`, ou fin du run). Un second flow de test reste en
+`waiting_external` (`resource:unity-editor`) sur son `git.checkout`. Les étapes n'ont pas de clé
+`resource:` ; les stages ne changent jamais de branche. `game-doc` reste en worktree jusqu'au merge (pas d'Unity).
 
-| Flow | Produire | Revue ⇄ correction | Test ⇄ correction | Verrou `unity-editor` |
-|---|---|---|---|---|
-| `game-art` | `art-produce` | `art-review` ⇄ `art-fix` | `art-import` ⇄ `art-fix` | tout le run |
-| `game-map` | `map-produce` | `map-review` ⇄ `map-fix` | `map-test` ⇄ `map-fix` | tout le run |
-| `game-doc` | `doc-write` | `doc-review` ⇄ `doc-fix` | aucun | tout le run |
+| Voie de dev | Produire | Revue ⇄ correction | Fin | Voie de test (`test_flow`) | Test ⇄ correction |
+|---|---|---|---|---|---|
+| `game-code` | `unity-implement` | `unity-review` ⇄ `unity-fix` | `to-test` | `game-test-code` | `unity-test` ⇄ `unity-fix` |
+| `game-art` | `art-produce` | `art-review` ⇄ `art-fix` | `to-test` | `game-test-art` | `art-import` ⇄ `art-fix` (+ `.meta` commités) |
+| `game-map` | `map-produce` | `map-review` ⇄ `map-fix` | `to-test` | `game-test-map` | `map-test` ⇄ `map-fix` |
+| `game-doc` | `doc-write` | `doc-review` ⇄ `doc-fix` | merge | aucun | aucun |
 
 Boucle épuisée : l'`until` de chaque boucle s'arrête aussi à `settings.max_*_rounds` (une boucle arrêtée par `max` seul escalade le run aussitôt et rien ne s'exécute après), puis label `aidp:blocked` et `fail` avec `kind: business` : le run finit `escalated` (sans `kind`, `failed`). Le dernier tour `need-fix` est corrigé mais pas re-revu : issue bloquée, un humain regarde. Le daemon passe `issue`, `track` et `route` aux pipelines (ticket GitHub) : aucun `with: { issue }` dans les flows. Le verrou (C3) est tenu par le run (`workspace: project`), jamais par le template. Les labels sont
 posés par `gh.issue_label`, les rapports par `gh.issue_comment` avec `cost_footer: true`.
@@ -193,4 +200,4 @@ Recette : `templates/recipes/memory.md`. Les 15 pipelines `unity-implement`, `un
 
 ## Écarts connus
 
-- `resource: unity-editor` (C3) n'est pas un champ de stage : les flows `game-*` le tiennent pour tout le run (`workspace: project`).
+- `resource: unity-editor` (C3) n'est pas un champ de stage : les flows de test `game-test-*` le tiennent pour tout le run (`workspace: project`).

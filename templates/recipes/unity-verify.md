@@ -67,7 +67,7 @@ Une compilation = une requête identifiée par un `requestId` unique
    le fichier une seule fois, d'un coup (écris-le sous un nom temporaire puis renomme-le). Le pont peut
    mettre quelques secondes à répondre pendant un domain reload.
 2. Attends `.aidp/compile/results/<requestId>.json` : teste sa présence toutes les 5 s, **timeout
-   180 s**. Une éventuelle recompilation ne démarre pas tant que le fichier n'existe pas.
+   600 s**. Une éventuelle recompilation ne démarre pas tant que le fichier n'existe pas.
 3. Lis-le :
    ```json
    { "id": "...", "ok": true, "errors": [ { "file": "Assets/...cs", "line": 12, "column": 5, "message": "CS0103: ..." } ],
@@ -76,7 +76,7 @@ Une compilation = une requête identifiée par un `requestId` unique
    - `ok: true` : compile gate vert. Les warnings des fichiers que tu as touchés se corrigent aussi.
    - `ok: false` : corrige chaque erreur (`file:line`) et relance une **nouvelle** requête. Au plus
      5 requêtes par stage ; ensuite le stage échoue (`status: failed`) avec la dernière liste.
-   - Pas de fichier au bout de 180 s : regarde la fin de `<projectRoot>/Logs/Editor.log` (fenêtre
+   - Pas de fichier au bout de 600 s : regarde la fin de `<projectRoot>/Logs/Editor.log` (fenêtre
      modale, domain reload bloqué, package absent), puis sors `blocked: unity-editor`.
 4. Rapporte dans le JSON du stage : `verification.compile` = `{ ok, errors, warnings, durationMs,
    requestId }`. Ne déclare jamais `ok` pour une compilation qui n'a pas tourné.

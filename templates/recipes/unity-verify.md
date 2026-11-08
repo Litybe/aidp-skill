@@ -12,6 +12,31 @@ Chemin de ce fichier : `<skill_root>/templates/recipes/unity-verify.md`
 Les chemins `.aidp/...` sont relatifs à la **racine du projet Unity** (`context.projectRoot`), jamais
 au dossier de stage. `.aidp/` est ignoré par git : ne le commite jamais.
 
+## 0.0 Mode : compile gate immédiate ou différée (voie de dev en worktree)
+
+Les flows de dev (`game-code`, `game-art`, `game-map`) tournent en **worktree** : aucun éditeur n'y est
+ouvert. Les flows de test (`game-test-*`) tournent dans le checkout principal, éditeur ouvert. Décide
+du mode avant tout, pour les stages `implement`, `repro` et `fix` de la revue (`report_from: review`) :
+
+1. `rtk curl -s http://127.0.0.1:3001/api/unity/status` (route absente : regarde le process `Unity.exe`
+   et sa ligne de commande `-projectpath`).
+2. L'éditeur est ouvert sur `context.projectRoot` (casse et `/`/`\` ignorés) : **mode immédiat**, suis
+   §0 à §2 comme avant.
+3. Sinon (éditeur fermé, autre projet, ou `projectRoot` est un worktree) : **mode différé**. Ne fais ni
+   requête C1 ni requête C8, n'attends aucun fichier de résultat, ne sors **jamais** `blocked:
+   unity-editor` ni `blocked: unity-branch` pour cette raison, ne lance pas Unity. Écris le code et les
+   tests avec soin (relis-les, vérifie les `using`, les signatures, les noms de tests), commite les
+   `.meta` que tu peux écrire à la main seulement si le projet les versionne et que tu connais le GUID
+   (sinon laisse l'éditeur les créer au test), et rapporte `verification.compile = "deferred"`,
+   `verification.tests = "deferred"` (dans `signals`, `compile_ok: null`, `editmode_failed: null`).
+   Un test de reproduction (`repro`) n'est alors pas exécuté : il est écrit et commité, `red` vaut
+   `null` et `signals.red` aussi ; le stage ne sort pas `blocked: no-repro` faute de pouvoir le
+   lancer. La PR dit « Vérification : compile et tests différés au test Unity (voie de test) ».
+4. La compilation et les tests ont lieu au test Unity (`unity-test`, mode immédiat), qui renvoie les
+   erreurs en `unity-fix` `report_from: test` dans le checkout principal.
+
+Le stage `unity-test` reste exigeant : éditeur absent = `blocked: unity-editor`, jamais « différé ».
+
 ## 0. Joindre l'éditeur (pont fichier)
 
 Les sessions headless (`claude -p`) n'ont pas le MCP Unity : le canal officiel est le **pont fichier**
@@ -42,7 +67,7 @@ Une compilation = une requête identifiée par un `requestId` unique
    le fichier une seule fois, d'un coup (écris-le sous un nom temporaire puis renomme-le). Le pont peut
    mettre quelques secondes à répondre pendant un domain reload.
 2. Attends `.aidp/compile/results/<requestId>.json` : teste sa présence toutes les 5 s, **timeout
-   180 s**. Une éventuelle recompilation ne démarre pas tant que le fichier n'existe pas.
+   600 s**. Une éventuelle recompilation ne démarre pas tant que le fichier n'existe pas.
 3. Lis-le :
    ```json
    { "id": "...", "ok": true, "errors": [ { "file": "Assets/...cs", "line": 12, "column": 5, "message": "CS0103: ..." } ],
@@ -51,7 +76,7 @@ Une compilation = une requête identifiée par un `requestId` unique
    - `ok: true` : compile gate vert. Les warnings des fichiers que tu as touchés se corrigent aussi.
    - `ok: false` : corrige chaque erreur (`file:line`) et relance une **nouvelle** requête. Au plus
      5 requêtes par stage ; ensuite le stage échoue (`status: failed`) avec la dernière liste.
-   - Pas de fichier au bout de 180 s : regarde la fin de `<projectRoot>/Logs/Editor.log` (fenêtre
+   - Pas de fichier au bout de 600 s : regarde la fin de `<projectRoot>/Logs/Editor.log` (fenêtre
      modale, domain reload bloqué, package absent), puis sors `blocked: unity-editor`.
 4. Rapporte dans le JSON du stage : `verification.compile` = `{ ok, errors, warnings, durationMs,
    requestId }`. Ne déclare jamais `ok` pour une compilation qui n'a pas tourné.
@@ -133,7 +158,8 @@ critères se testent normalement ; le stage conclut `blocked` avec `signals.bloc
 
 | Situation | Réponse du stage |
 |---|---|
-| Éditeur fermé ou sur un autre projet, pas de résultat C1 / C2 / C8 au délai | `blocked`, `signals.blocked_reason: "unity-editor"` |
+| Éditeur fermé ou sur un autre projet, stage `implement` / `repro` / `fix` de revue | pas de blocage : mode différé (§0.0), `verification.compile = "deferred"` |
+| Éditeur fermé ou sur un autre projet, stage `unity-test` ; ou pas de résultat C1 / C2 / C8 au délai éditeur ouvert | `blocked`, `signals.blocked_reason: "unity-editor"` |
 | Branche courante du checkout différente de celle de l'issue | `blocked`, `signals.blocked_reason: "unity-branch"` |
 | Critère `needs-feel-check` à juger | `blocked`, `signals.blocked_reason: "feel-check"` |
 | Erreurs de compilation que tu ne sais pas corriger en 5 requêtes | `failed`, liste `file:line` |

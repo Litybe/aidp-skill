@@ -6,6 +6,12 @@
 # the loop on settings.max_*_rounds so that the blocked label and the business `fail` run (a loop ended by
 # `max` alone escalates the run at once, nothing after it runs).
 # Start with POST /api/tickets/:key/flow {"flow": "game-art"}.
+# Workspace: `workspace: project`. No worktree: every step runs in the MAIN checkout of the project (where the
+# Unity Editor is open). `git.checkout` is the first step: it needs a clean checkout (else `blocked: dirty-checkout`,
+# label aidp:blocked, comment listing the files, run escalated), then switches to the issue branch (created from the base
+# when absent, resumed otherwise). The run holds the project's `unity-editor` resource (one flow at a time) from that step
+# until `git.restore` (before the merge approval) gives the checkout back to the base branch; the daemon also restores
+# when the run ends escalated, failed or cancelled. A dirty checkout is left as it is and the issue comment says so.
 id: game-art
 version: 1
 inputs:
@@ -13,10 +19,19 @@ inputs:
 settings:
   max_review_rounds: 2
   max_test_rounds: 2
+workspace: project
 steps:
+  - { id: checkout, kind: action, use: git.checkout, phase: Préparation }
+  - { id: checkout_label, kind: action, use: gh.issue_label, with: { state: blocked }, phase: Préparation, when: "steps.checkout.outputs.blocked == true" }
+  - id: checkout_comment
+    kind: action
+    use: gh.issue_comment
+    phase: Préparation
+    with: { body: "{{ steps.checkout.outputs.message }}" }
+    when: "steps.checkout.outputs.blocked == true"
+    on_error: warn
+  - { id: checkout_stop, kind: action, use: fail, phase: Préparation, with: { kind: business, message: "blocked: dirty-checkout" }, when: "steps.checkout.outputs.blocked == true" }
   - { id: claim, kind: action, use: gh.issue_label, with: { state: in-progress }, phase: Préparation }
-  - { id: worktree, kind: action, use: git.worktree, phase: Préparation }
-  - { id: branch, kind: action, use: git.branch, phase: Préparation }
   - { id: produce, kind: pipeline, use: art-produce, phase: Réalisation, pushes: true }
   - id: review_loop
     kind: loop
@@ -46,7 +61,7 @@ steps:
     until: "steps.test.outputs.passed == true || !(steps.test_loop.iteration < settings.max_test_rounds)"
     body:
       - { id: test_label, kind: action, use: gh.issue_label, with: { state: testing } }
-      - { id: test, kind: pipeline, use: art-import, pushes: true, resource: unity-editor }
+      - { id: test, kind: pipeline, use: art-import, pushes: true }
       - id: test_comment
         kind: action
         use: gh.issue_comment
@@ -62,7 +77,7 @@ steps:
   - { id: test_escalate, kind: action, use: fail, phase: Test Unity, with: { kind: business, message: "Test épuisé : issue bloquée" }, when: "steps.test.outputs.passed != true" }
   - { id: ready, kind: action, use: gh.pr_ready, phase: Merge }
   - { id: await, kind: action, use: gh.issue_label, with: { state: awaiting-merge }, phase: Merge }
+  - { id: restore, kind: action, use: git.restore, phase: Merge }
   - { id: merge_approval, kind: human, phase: Merge, prompt: "Merger la PR ?", choices: [approve] }
   - { id: merge, kind: action, use: gh.merge, phase: Merge }
   - { id: done, kind: action, use: gh.issue_label, with: { state: done }, phase: Merge }
-  - { id: clean, kind: action, use: worktree.remove, phase: Nettoyage, on_error: warn }

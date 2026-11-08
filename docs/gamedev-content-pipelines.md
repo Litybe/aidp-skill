@@ -132,21 +132,31 @@ Aucun Unity ; la PR reste en draft (`ready` et fusion = le flow). Jamais d'assou
 
 ## Flows : qui appelle quoi
 
-Quatre flows natifs dans `templates/flows/` (`game-code` pour les pipelines `unity-*`). Même forme :
-claim (`aidp:in-progress`) → `git.worktree` → `git.branch` → produire (`pushes: true`) → boucle revue
+Quatre flows natifs dans `templates/flows/` (`game-code` pour les pipelines `unity-*`). Même forme,
+`workspace: project` : **pas de worktree**, toutes les étapes tournent dans le checkout principal du
+projet (l'éditeur Unity de l'utilisateur y est ouvert). `git.checkout` (`checkout`) : checkout propre
+obligatoire, sinon `blocked: dirty-checkout` (label `aidp:blocked`, commentaire d'issue listant les
+fichiers, run `escalated`) ; puis `git switch` sur la branche de l'issue (créée depuis la base si
+absente, reprise sinon). Ensuite : claim (`aidp:in-progress`) → produire (`pushes: true`) → boucle revue
 (2 tours : `aidp:review`, pipeline de revue, `gh.issue_comment` du verdict, correction si
 `verdict == 'need-fix'`) → boucle test (2 tours : `aidp:testing`, test, commentaire, correction avec
-`report_from: test` si `passed == false`) → `gh.pr_ready` → `aidp:awaiting-merge` → `merge_approval`
-humain → `gh.merge` → `aidp:done` → `worktree.remove`.
+`report_from: test` si `passed == false`) → `gh.pr_ready` → `aidp:awaiting-merge` → `git.restore`
+(retour sur la base si le checkout est propre, sinon laissé tel quel et dit dans un commentaire d'issue)
+→ `merge_approval` humain → `gh.merge` → `aidp:done`. Sur `escalated`, échec ou annulation, le daemon
+fait le même `git.restore`.
+
+**Verrou** : un run `workspace: project` tient la ressource `unity-editor:<projet>` de sa première
+étape (`git.checkout`) jusqu'au retour (`git.restore`, ou fin du run). Un second flow reste en
+`waiting_external` (`resource:unity-editor`) sur son `git.checkout`. Les étapes n'ont donc plus de clé
+`resource:` ; les stages ne changent jamais de branche.
 
 | Flow | Produire | Revue ⇄ correction | Test ⇄ correction | Verrou `unity-editor` |
 |---|---|---|---|---|
-| `game-art` | `art-produce` | `art-review` ⇄ `art-fix` | `art-import` ⇄ `art-fix` | sur `art-import` seul |
-| `game-map` | `map-produce` | `map-review` ⇄ `map-fix` | `map-test` ⇄ `map-fix` | sur `map-test` seul |
-| `game-doc` | `doc-write` | `doc-review` ⇄ `doc-fix` | aucun | aucun |
+| `game-art` | `art-produce` | `art-review` ⇄ `art-fix` | `art-import` ⇄ `art-fix` | tout le run |
+| `game-map` | `map-produce` | `map-review` ⇄ `map-fix` | `map-test` ⇄ `map-fix` | tout le run |
+| `game-doc` | `doc-write` | `doc-review` ⇄ `doc-fix` | aucun | tout le run |
 
-Boucle épuisée : l'`until` de chaque boucle s'arrête aussi à `settings.max_*_rounds` (une boucle arrêtée par `max` seul escalade le run aussitôt et rien ne s'exécute après), puis label `aidp:blocked` et `fail` avec `kind: business` : le run finit `escalated` (sans `kind`, `failed`). Le dernier tour `need-fix` est corrigé mais pas re-revu : issue bloquée, un humain regarde. Le daemon passe `issue`, `track` et `route` aux pipelines (ticket GitHub) : aucun `with: { issue }` dans les flows. La revue seule ne tient
-pas l'éditeur ; le verrou (C3) est posé par l'étape du flow, jamais par le template. Les labels sont
+Boucle épuisée : l'`until` de chaque boucle s'arrête aussi à `settings.max_*_rounds` (une boucle arrêtée par `max` seul escalade le run aussitôt et rien ne s'exécute après), puis label `aidp:blocked` et `fail` avec `kind: business` : le run finit `escalated` (sans `kind`, `failed`). Le dernier tour `need-fix` est corrigé mais pas re-revu : issue bloquée, un humain regarde. Le daemon passe `issue`, `track` et `route` aux pipelines (ticket GitHub) : aucun `with: { issue }` dans les flows. Le verrou (C3) est tenu par le run (`workspace: project`), jamais par le template. Les labels sont
 posés par `gh.issue_label`, les rapports par `gh.issue_comment` avec `cost_footer: true`.
 
 ## Mémoire et RAG (contrat C10)
@@ -183,4 +193,4 @@ Recette : `templates/recipes/memory.md`. Les 15 pipelines `unity-implement`, `un
 
 ## Écarts connus
 
-- `resource: unity-editor` (C3) n'est pas un champ de stage : posé sur les étapes de flow (game-art : art-import ; game-map : map-test).
+- `resource: unity-editor` (C3) n'est pas un champ de stage : les flows `game-*` le tiennent pour tout le run (`workspace: project`).

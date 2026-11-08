@@ -22,8 +22,13 @@ Les outils `mcp__unity-mcp__Unity_*` sont différés : charge-les avec ToolSearc
    arrête-toi. Réponds `status: blocked`, `signals.blocked_reason: "unity-mcp"`, avec dans `summary`
    « blocked: unity-mcp » et la cause (outil introuvable, MCP injoignable, projet différent). Ne
    lance pas Unity, ne tente pas le batchmode, ne passe pas au computer use pour compiler.
-3. Ne change jamais de branche pendant que l'éditeur est ouvert : la branche courante doit être celle
-   de la PR (`rtk git branch --show-current`).
+3. Le flow `game-*` travaille dans le checkout principal du projet (`context.projectRoot`), là où
+   l'éditeur est ouvert : il a déjà basculé ce checkout sur la branche de l'issue (`git.checkout`) et
+   tient le verrou `unity-editor` jusqu'au retour sur la base. Vérifie que l'éditeur est ouvert sur
+   `projectRoot` (`GetProjectRoot`) et que la branche courante est celle de l'issue / de la PR
+   (`rtk git branch --show-current`). Sinon `status: blocked`, `signals.blocked_reason: "unity-branch"`,
+   « blocked: unity-branch » et les deux branches dans `summary`. **Jamais de `git switch` /
+   `git checkout` de branche dans un stage** : la bascule est faite par le flow, pas par toi.
 
 ## 1. Compile gate (contrat C1)
 
@@ -136,6 +141,7 @@ critères se testent normalement ; le stage conclut `blocked` avec `signals.bloc
 | Situation | Réponse du stage |
 |---|---|
 | MCP Unity muet, éditeur d'un autre projet, pas de résultat C1 / C2 au délai | `blocked`, `signals.blocked_reason: "unity-mcp"` |
+| Branche courante du checkout différente de celle de l'issue | `blocked`, `signals.blocked_reason: "unity-branch"` |
 | Critère `needs-feel-check` à juger | `blocked`, `signals.blocked_reason: "feel-check"` |
 | Erreurs de compilation que tu ne sais pas corriger en 5 requêtes | `failed`, liste `file:line` |
 | Scénario ou test KO | pas un blocage : `completed` avec `passed: false` (pipelines `unity-test`) |

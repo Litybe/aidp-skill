@@ -131,8 +131,7 @@ stages:
     with:
       instructions: >
         Write result.json: {"passed": <true only when the compile gate was ok,
-        every sprite meta ok (after fix) and every animation played without
-        console error>, "pr": <n>, "failed": [<short reasons>], "report":
+        every sprite meta ok (after fix) and no animation that was actually played reported a console error; played null (headless, no Unity MCP) never fails>, "pr": <n>, "failed": [<short reasons>], "report":
         "report.md", "blocked": <reason or null>} (contract C9, flat object;
         mirror passed and report as signals of the reply envelope; status
         blocked: the reason goes in signals.blocked_reason). Write report.md: the

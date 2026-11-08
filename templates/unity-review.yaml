@@ -116,8 +116,9 @@ stages:
         the review body is the full verification report — the criteria table
         with every proof, the files read, the checks done, the 🧪 list for
         `unity-test` — opened with « ✅ Rien à corriger ». (D) Verdict:
-        `need-fix` as soon as one criterion is ❌ or ⚠️ or one comment has a
-        fixSeverity; `done` otherwise (🧪 rows do not prevent `done`). Write
+        `need-fix` only when a criterion is ❌ or a comment is bloquant or
+        majeur; ⚠️, mineur and info findings stay listed in the review and do
+        not prevent `done`, nor do 🧪 rows. Write
         review.json: {"pr", "round", "review_url", "verdict":
         "done|need-fix", "fix_needed" (boolean, true for need-fix),
         "has_blocking_findings", "criteria": [{id, status, proof}], "to_test":

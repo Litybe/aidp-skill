@@ -5,7 +5,7 @@ description: >
   then push. prepare → fix. `report_from: review` (default): the points ❌ / ⚠️ of the last `art-review` comment of the PR and the unresolved review threads. `report_from: test`: the failures reported by the last `art-import` report of the PR.
   A fix never weakens a criterion, a test or a scenario to make it pass.
 
-  Fix on the PR's branch in the asset files (.aseprite, exported sheet / PNG / JSON, .meta, previews); Aseprite re-measure (lint, anim_audit, unity_validate), Unity export after the edits; push
+  Fix on the PR's branch in the asset files (.aseprite, exported sheet / PNG / JSON, previews; never a .meta); Aseprite re-measure (lint, anim_audit, unity_validate), Unity export after the edits; push
   (never force) and post one `art-fix-summary` PR comment (round, table
   item / status / evidence, « Reste manuel »). The PR stays a draft: `ready`
   and the merge belong to the flow. No Unity is opened.
@@ -67,6 +67,7 @@ stages:
       - "Write pixellab-usage.json (C6) in your stage dir when you call Pixellab: balanceBefore and balanceAfter (raw get_balance answers), generations (spent by this stage, 0 if none), jobs, recordedAt."
       - "No Unity: never open the Unity Editor or its MCP. Never weaken a criterion, a test or a scenario to make it pass."
       - "Do not start a pipeline or another Claude session."
+      - "No Unity .meta in a worktree (no Editor): never write or fake one. art-import creates them. An item that only asks for a .meta or a Unity import value is not yours: skip it, write « reporté au test Unity » in fix.json."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"
       memory: "{{ stages.prepare.outputs.memory-context }}"
@@ -76,7 +77,7 @@ stages:
         branch, a summary « rien à corriger » and pushed false, post nothing
         on GitHub, and reply completed with signals pr, branch, summary,
         pushed false. Otherwise: Fix, from blocking to minor, every item of `context.items` on the asset files of the PR, as your section « Lancé par aidp » says. Fix each item with the tool it names (Aseprite MCP: draw, color_remap, palette_sync, anim_offset, frame_duration, tag_set, slice_set, pivot_to_unity...), then re-measure on the corrected file: lint with the palette, anim_audit on each tag, unity_validate against the project profile, and the 1x look (preview). Export for Unity (sheet + JSON, pivot and slices per the profile) and keep the .meta values (16 PPU, Point, no mipmap, compression none). Save the corrected frames back to Pixellab when the asset has a Pixellab id. An item from `report_from: test` (art-import report: .meta wrong, animation not played, console error) is fixed in the asset files, never in a Unity scene. A fix that cannot be verified without the Unity Editor goes to « Reste manuel », not invented.
-        Commit only the asset files (.aseprite, exported sheet / PNG / JSON, .meta, previews) (`fix(art): ... (#<issue>)`, French, one
+        Commit only the asset files (.aseprite, exported sheet / PNG / JSON, previews; never a .meta) (`fix(art): ... (#<issue>)`, French, one
         commit per subject), push on the PR's branch (never force), reply on
         EACH review thread with what you did and the commit, resolve the
         fixed ones, leave a thread open with the reason when you did not fix

@@ -121,7 +121,7 @@ Un scénario par critère `CA-n` de l'issue (et par `T-n` manuel jouable), en do
 
 - **Scène et objets : un scénario ne dépend jamais du contenu d'un niveau.** Sans champ `scene`, le
   scénario joue dans l'arène `Assets/Tests/Playtest/Scenes/PlaytestArena.unity` (GameManager, joueur,
-  caméra et sol plat réels, joueur en (0, 1.5), sol de x -40 à 400) : **n'écris pas `scene`**, ou écris
+  caméra et sol plat réels, joueur en (0, 0.54), sol de x -40 à 400) : **n'écris pas `scene`**, ou écris
   exactement ce chemin. Aucun `Level_*` dans `scene`, et ne modifie jamais un `Level_*` (ni une scène,
   ni un prefab) pour un test.
 - Les objets de test (levier, ennemi, objet à ramasser, plateforme...) se posent avec la commande

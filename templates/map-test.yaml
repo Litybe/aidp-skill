@@ -22,7 +22,8 @@ description: >
   carries `resource: unity-editor` (contract C3; the lock is a flow concern).
   Without the Editor or the Unity MCP the run reports `blocked: unity-mcp`.
   Nothing gameplay is edited: only the scenario files are added, committed
-  and pushed on the PR branch at the end (stage report).
+  and pushed on the PR branch at the end (stage report), with the `.meta` files the
+  Editor generated for them (a new file under Assets/ is useless without its `.meta`).
 
   Outputs read by the flow (contract C4): result.json {passed, report} and the
   Markdown report report.md, with captures, in the stage dir.
@@ -146,7 +147,7 @@ stages:
     policy:
       - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Memory proposals: write memory-proposals.json (`{\"proposals\": []}` when nothing qualifies), 5 max, non-obvious reusable lessons only, as templates/recipes/memory.md §3 says."
-      - "No GitHub write other than the commit and push of the scenario files. Never merge. Never commit anything else."
+      - "No GitHub write other than the commit and push of the scenario files and of the generated `.meta` files. Never merge. Never commit anything else."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"
       memory: "{{ stages.prepare.outputs.memory-context }}"
@@ -164,7 +165,10 @@ stages:
         compile gate, import and console, a table path / scenario / result /
         expected / actual / capture, not-testable items with the missing
         probe or command, and the files created. When the scenarios passed (or
-        failed for a real reason) commit the new scenario files alone
+        failed for a real reason) commit the new scenario files and the
+        `.meta` the Editor generated for them, nothing else
         (`test(map): scénarios de traversée ...`, French) and push the PR
-        branch.
+        branch. The `.meta` of the map assets themselves (the PR was
+        produced in a worktree with no Editor) are committed and pushed too
+        when they are new or fixed: `rtk git status --porcelain`, stage by name.
     outputs: [result.json, report.md, memory-proposals.json]

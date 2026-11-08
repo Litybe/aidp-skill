@@ -248,7 +248,8 @@ stages:
     policy:
       - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Never ask the user a question. No Pixellab call. Never merge, never mark the PR ready."
-      - "Commit only the asset files (.aseprite, exported sheet / PNG / JSON, .meta, previews) on the working branch; never the base branch."
+      - "Commit only the asset files (.aseprite, exported sheet / PNG / JSON, previews) on the working branch; never the base branch. No .meta (the Unity Editor makes them at the test step)."
+      - "No Unity .meta in a worktree (no Editor): never write or fake one (guid, PPU, filter, compression, spriteBorder, pivot). art-import creates them at the test step."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"
       memory: "{{ stages.prepare.outputs.memory-context }}"

@@ -73,6 +73,7 @@ stages:
       - "Read only on the project: run the scripts on the copies in the stage dir, never write the .ldtk or the graph, never use git, never open LDtk or Unity."
       - "Devil's advocate: the map is not ready until each axis and each criterion is proven. Finding defects is success: reply completed once findings.json is written and re-read."
       - "A claim is proven by a script output or a measure, never by reading the PR text alone."
+      - "No Unity Editor in the worktree: a missing .meta or a criterion needing a .meta or Unity import value (PPU, Point, mipmaps, compression, spriteBorder, pivot) is 🧪 « reporté au test Unity (map-test) », never ❌ or need-fix, not counted in the verdict."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"
       memory: "{{ stages.prepare.outputs.memory-context }}"

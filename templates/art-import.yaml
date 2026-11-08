@@ -4,8 +4,9 @@ description: >
   Gamedev route `art`, test step (replaces the Unity playtest): proves that a
   pixel art asset of the PR works in Unity. Checks the .meta of every sprite
   (16 pixels per unit, filter Point, no mipmap, compression none, sprite mode
-  and pivot as the project profile says; fixes them in the .meta text when
-  the importer does not already apply them) and runs the compile gate over the
+  and pivot as the project profile says, plus spriteBorder and
+  textureCompression 0 on every platform; creates the missing .meta through
+  the Editor import and sets the values the issue expects) and runs the compile gate over the
   file bridge (contract C1, templates/recipes/unity-verify.md). Scene placement
   and Play Mode captures only run when the Unity MCP is available.
 
@@ -53,7 +54,10 @@ stages:
         otherwise blocked. (3) List the sprite assets of the PR (.png /
         .aseprite under Assets/), their .meta, and the animation clips or
         controllers when present, and read the asset requirements of the
-        issue (names, tags, frame counts, ms). Write context.json: pr, issue,
+        issue (names, tags, frame counts, ms, Unity import settings: PPU,
+        filter, mipmaps, compression, spriteBorder, pivot) and the `deferred`
+        list of the latest review (« Revue avocat du diable » PR comment or
+        findings.json of the review run), copied into context.json. Write context.json: pr, issue,
         branch, sprites (list of {path, meta, tags, frames, expected}), clips.
         Memory (contract C10, templates/recipes/memory.md of the skill): with the issue number, run `rtk aidp memory context --project "<projectRoot>" --issue GH-<issue> --route art --stage import --budget 2000` (without an issue, drop `--issue`) and save its output as memory-context.md in your stage dir, unchanged; if the command fails, write memory-context.md holding only « Mémoire indisponible : <cause> » and go on. Read the BIBLE by its index (00_INDEX) and get any passage you need with `rtk aidp rag search "<query>" --project "<projectRoot>" --source bible --budget 1500`, never whole.
     outputs: [context.json, memory-context.md]
@@ -79,11 +83,17 @@ stages:
         project: write import.json with blocked "unity-editor". (1) Compile
         gate C1 first: drop .aidp/compile/requests/<id>.json, read
         .aidp/compile/results/<id>.json; not ok: failed with the errors.
-        (2) For each sprite of `context`: read its .meta as text and compare
-        with what mcp__aseprite__project_profile / unity_validate require
-        (16 pixels per unit, Point filter, no mipmaps, no compression, sprite
-        mode and pivot). A wrong value is fixed by editing the .meta text
-        (keep the guid) and noted; drop a new compile request so the Editor
+        (2) For each sprite of `context`: the PR has no .meta (worktree, no Editor):
+        drop a compile request so the Editor imports the PNG and creates the
+        .meta, then read it as text. Expected values, in order: those the
+        issue states; the `deferred` items of the review (« reporté au test
+        Unity »); else mcp__aseprite__project_profile / unity_validate (16
+        pixels per unit, Point filter, no mipmaps, sprite mode, pivot).
+        Always also: spriteBorder as expected (zero unless the issue asks for
+        9-slice) and textureCompression 0 (none) in the default settings and
+        in every platform override (Standalone, Android, iPhone, WebGL...).
+        A wrong or missing value is fixed by editing the .meta text (keep the
+        guid) and noted; drop a new compile request so the Editor
         reimports it, then re-read the .meta. (3) Read the end of
         <projectRoot>/Logs/Editor.log for import errors or warnings about the
         sprites. (4) Scene placement and Play Mode captures need the Unity MCP:
@@ -92,12 +102,12 @@ stages:
         asset passes when the compile gate is ok, every .meta is ok and the log
         holds no error for it. Write import.json: compile {ok, errors,
         durationMs}, blocked (null or reason), sprites: per sprite {path, meta:
-        {ppu, filter, mipmaps, compression, pivot, ok, fixed}, played (null or
+        {ppu, filter, mipmaps, compression, spriteBorder, pivot, ok, fixed}, played (null or
         {tag, frames, ms, loops, ok}), captures, console}.
         (5) `rtk git status --porcelain`: the `.meta` files that are new or
         modified and belong to the PR's assets (the sprites, clips and
         controllers of `context`, and their folders) are staged by name, never
-        `git add -A`. Commit them (`chore(art): .meta générés par l'éditeur
+        `git add -A`. Commit them (new ones included: a sprite without its .meta is useless; `chore(art): .meta générés par l'éditeur
         (#<issue>)`, French) and `rtk git push` on the current branch (the PR
         head; the flow holds the checkout on it). Record the commit in
         import.json "metaCommit" ({sha, files}) or null when there was

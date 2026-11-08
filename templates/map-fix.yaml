@@ -40,7 +40,7 @@ stages:
         (`rtk gh pr list --search "<n> in:body" --state open --json number`),
         else the open PR of the current branch; none found, closed or merged:
         blocked. (3) The issue: `issue`, else the `Closes #<n>` of the PR
-        body. (4) `rtk git status --porcelain` not empty: blocked. Check out
+        body. (4) `rtk git status --porcelain`, ignoring untracked *.meta and what the Unity Editor rewrites alone (Packages/packages-lock.json, ProjectSettings/, UserSettings/), not empty: blocked. Check out
         the PR head branch (`rtk gh pr checkout <pr>`) when it is not the
         current one. (5) What to fix. By `report_from`. review: the unresolved review threads, the ❌ / ⚠️ rows of the « À corriger » list of the last PR comment headed « Revue avocat du diable » that no `map-fix-summary` comment answered yet, and the general PR comments of a human posted after it. test: the last PR comment holding the `map-test` report (its failed rows: path or scenario, criterion, expected, actual, message), plus the unresolved threads. (6) Fix round: 1 + the
         number of PR comments containing `map-fix-summary`. (7) Write

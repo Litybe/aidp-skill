@@ -14,7 +14,7 @@ description: >
   Markdown test report), via result.json. A criterion tagged
   `needs-feel-check` cannot be judged by a probe: the other criteria are
   tested, then the stage ends `blocked: feel-check` (a human session judges
-  it). Unity MCP silent, or no C1 / C2 result in time: `blocked: unity-mcp`.
+  it). Editor or file bridge silent, or no C1 / C2 result in time: `blocked: unity-editor`.
   A failed test or scenario is NOT a block: passed false, and the flow runs
   `unity-fix` with `report_from: test`.
 
@@ -81,7 +81,7 @@ stages:
       - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Memory proposals: write memory-proposals.json (`{\"proposals\": []}` when nothing qualifies), 5 max, non-obvious reusable lessons only, as templates/recipes/memory.md §3 says."
       - "Never edit game code, a scene, a prefab or an asset, and never save one. The only files you may add to the repository are the scenario files Assets/Tests/Playtest/Scenarios/issue-<n>-ca<k>.json (with their .meta): commit those alone and push them on the PR's branch, never force."
-      - "No computer use, no screenshot-driven play: the scenarios, the probes and the result files are the only source of truth. The Unity MCP is used to call the C1 and C2 entry points and to read the console."
+      - "No computer use, no screenshot-driven play: the scenarios, the probes and the result files are the only source of truth. The file bridge is used to call the C1 and C2 entry points and to read the console."
       - "The Unity Editor stays open: never run Unity in batchmode, never close it, never change branch. The only GitHub write allowed is ONE `rtk gh pr comment` per run."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"
@@ -126,7 +126,7 @@ stages:
         left after all this (others tested): reply blocked with « blocked:
         feel-check » in the summary, signals.blocked_reason feel-check,
         result.json with passed false, and everything above still written
-        and posted. Unity MCP silent or no C1 / C2 result in time: reply
-        blocked, « blocked: unity-mcp » (§0), nothing posted. Otherwise reply
+        and posted. Editor or file bridge silent or no C1 / C2 result in time: reply
+        blocked, « blocked: unity-editor » (§0), nothing posted. Otherwise reply
         completed; mirror passed, round and failed (a count) as signals.
     outputs: [playtest.json, test-report.md, result.json, memory-proposals.json]

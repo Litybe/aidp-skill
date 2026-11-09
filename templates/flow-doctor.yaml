@@ -57,7 +57,7 @@ stages:
 
   - name: diagnose
     agent: executor
-    model: sonnet
+    model: opus
     needs: [prepare]
     scope: { mode: stage_dir_only }
     policy:

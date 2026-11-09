@@ -189,6 +189,14 @@ class MetaTests(unittest.TestCase):
         self.assertIn("  tileSets: []", text)
         self.assertIn("canvasSize: {x: 0, y: 0}", text)
 
+    def test_a_new_folder_gets_the_same_guid_in_every_pr(self):
+        import hashlib
+        png(self.root, "Assets/Sprites/Fresh/a.png")
+        self.commit_changes()
+        self.go()
+        expected = hashlib.md5(b"Assets/Sprites/Fresh").hexdigest()
+        self.assertIn("guid: " + expected, self.read("Assets/Sprites/Fresh.meta"))
+
     def test_new_folders_get_a_meta_and_known_ones_do_not(self):
         png(self.root, "Assets/Sprites/Near/Deep/Deeper/new.png")
         self.commit_changes()

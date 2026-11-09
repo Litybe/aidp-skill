@@ -27,6 +27,7 @@ import random
 import re
 import subprocess
 import sys
+import hashlib
 import uuid
 
 PPU = 16
@@ -323,7 +324,9 @@ def run(repo, base, head, defaults, spec, dry_run, seed=None):
             else:
                 candidates = [m for m in metas if m[:-5] in known_dirs]
                 model_path, model = pick_model(repo, base, target, candidates, lambda t: "folderAsset: yes" in t)
-            guid = new_guid(used_guids)
+            # Un dossier neuf peut naitre dans plusieurs PR : le meme GUID evite un conflit add/add.
+            is_asset = is_png or target.endswith(".aseprite")
+            guid = new_guid(used_guids) if is_asset else hashlib.md5(target.encode("utf-8")).hexdigest()
             if is_png:
                 if model is None:
                     raise MetaError("aucun .png.meta de sprite dans la base pour %s" % target)

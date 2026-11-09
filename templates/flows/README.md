@@ -37,3 +37,13 @@ Daemon facts the flows rely on:
 
 Always name the flow when you start one: the flow the daemon starts when the request names none
 (`ticket-delivery`) is no longer part of this skill.
+
+## Bug tickets (failed test)
+
+`game-test-code`, `game-test-art` and `game-test-map` (version 2) have no fix loop any more. A failed test (`passed == false`) runs `bug.create`: bug issue labelled `bug` and `bug:code|art|map`, title `fix(GH-<n>): <summary>`, sub-issue of the ticket, marker `<!-- aidp:bug parent=<n> base=feat/GH-<n> -->` in its body. The ticket goes back to `to-test` and waits (open blocker `waiting-on:GH-<bug>`); the run ends `done`. A test without verdict (neither true nor false) blocks the issue. A 4th bug (`capped`, cap 3) labels the ticket `blocked` and ends the run `escalated`.
+
+- `game-bug-code.yaml`, `game-bug-art.yaml`, `game-bug-map.yaml`: claim, worktree, branch `fix/GH-<bug>` from `origin/feat/GH-<parent>`, produce/implement, review <-> fix loop (2 rounds), then AUTOMATIC merge into `feat/GH-<parent>` when the verdict is `done` (`gh.pr_ready`, `gh.merge`), `done`, `gh.issue_close`. Not `done`: label `blocked`, run `escalated`, nothing merged.
+- The pipelines (`unity-*`, `art-*`, `map-*`) take the input `base_branch` (filled from the ticket) and pass it as `context.baseBranch`: the PR targets that branch, never `main`.
+- When the bug is closed the parent is free: the dispatcher starts the test flow again. The PR of the parent toward `main` stays a human merge.
+- `routing.yaml` (Vault, patch by hand): rules at the top `labels: [bug:code] -> pixelhood-bug-code`, `bug:art -> pixelhood-bug-art`, `bug:map -> pixelhood-bug-map`; repos `pixelhood-bug-code: { route: code, flow: game-bug-code, track: bug }`, `pixelhood-bug-art: { route: art, flow: game-bug-art }`, `pixelhood-bug-map: { route: map, flow: game-bug-map }`, without `test_flow`. An existing `pixelhood-bug` entry stays for bugs filed by hand.
+- Needs the daemon actions `bug.create` and `gh.issue_close`, and GitHub sub-issues enabled on the repo.

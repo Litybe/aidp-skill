@@ -203,3 +203,7 @@ Recette : `templates/recipes/memory.md`. Les 15 pipelines `unity-implement`, `un
 ## Écarts connus
 
 - `resource: unity-editor` (C3) n'est pas un champ de stage : les flows de test `game-test-*` le tiennent pour tout le run (`workspace: project`).
+
+## Bugs levés par un test en échec
+
+Les flows `game-test-code|art|map` (v2) ne bouclent plus sur un correctif. Un test en échec crée une issue bug (labels `bug` et `bug:code|art|map`, titre `fix(GH-n): résumé`, sous-issue du ticket, marqueur `<!-- aidp:bug parent=n base=feat/GH-n -->`). Le ticket repasse `to-test` et attend ce bug (blocage ouvert). Le bug suit `game-bug-code|art|map` : branche `fix/GH-<bug>` créée depuis `feat/GH-<n>`, PR vers `feat/GH-<n>` (jamais `main`), merge automatique quand le verdict de revue est `done` (sinon le bug reste `blocked`, rien n'est mergé). À la fermeture du bug le ticket repart en test. Plafond : 3 bugs par ticket, ensuite le ticket passe `blocked` avec un commentaire. La PR finale vers `main` reste une décision humaine. Patch `routing.yaml` : voir `templates/flows/README.md`.

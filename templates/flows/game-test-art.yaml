@@ -1,9 +1,13 @@
 # Game art test lane: the headless test of an issue whose development ended (phase `to-test`), then the merge.
 # Started by the dispatcher (never by hand, except through POST /api/tickets/:key/start) as the `test_flow` of the route,
 # when the test lane of the project is free: `dispatcher.test_slots` (1) test flows at a time per project.
-# art-headless <-> art-fix loop (`report_from: test`), PR ready, human merge. Labels `aidp:*` are set by gh.issue_label, every
-# test is commented on the issue (gh.issue_comment). A loop that runs out of rounds sets `blocked` and ends the run `escalated`
-# (`fail` with kind business). Loop `max` is a literal (the schema wants a u32); keep it equal to settings.max_test_rounds.
+# art-headless, then PR ready and human merge when the test passes. A FAILED test no longer loops on a fix: `bug.create` raises a bug
+# issue (label `bug`, title `fix(GH-<n>): <summary>`, sub-issue of this ticket, route `art`) and this flow ends `done` with the ticket
+# back in the `to-test` phase. The ticket waits (`waiting-on:GH-<bug>`: the bug is an open blocker) while the bug flow (`game-bug-art`)
+# fixes it on `fix/GH-<bug>` from `feat/GH-<n>` and merges it into `feat/GH-<n>` once its review passes. When the bug is closed the
+# dispatcher starts this flow again. At most 3 bugs per ticket (`capped`): the 4th failed test labels the ticket `blocked`, comments
+# why and ends the run `escalated`. The final PR toward `main` stays the human's decision.
+# Labels `aidp:*` are set by gh.issue_label, every test is commented on the issue (gh.issue_comment).
 # Workspace: the default one, a worktree per ticket, like the dev lane. NO Unity Editor, NO `unity-editor` resource, no
 # `git.checkout` / `unity.refresh` / `git.restore`: the test is headless (checks on the files of the PR, no Unity), so the main
 # checkout of the project stays free. Decision: art / map / doc tickets need no Unity Editor test; the Editor tests stay for
@@ -11,41 +15,49 @@
 # `git.worktree` then `git.branch` take the issue branch the dev flow pushed. CAUTION: `worktree.remove` of the dev flow deletes
 # the local branch `feat/GH-<n>`, so `git.worktree` creates it again from the default branch and `git.branch` finds it local
 # (no switch to origin). The first stage of art-headless therefore runs `git fetch` + `git merge --ff-only origin/<branch>`
-# (blocked `branch-diverged` otherwise) before testing. The test commits and pushes the `.meta` files it creates
-# (scripts/unity_meta.py), hence `pushes: true`; `worktree.remove` at the end saves any unpushed work and removes the worktree.
+# (blocked `branch-diverged` otherwise) before testing. After a bug merged into `feat/GH-<n>` this fast-forward takes the fix.
+# The test commits and pushes the `.meta` files it creates (scripts/unity_meta.py), hence `pushes: true`; `worktree.remove` at the
+# end saves any unpushed work and removes the worktree.
 id: game-test-art
-version: 1
+version: 2
 inputs:
   ticket: { required: true }
-settings:
-  max_test_rounds: 2
 steps:
   - { id: worktree, kind: action, use: git.worktree, phase: Préparation }
   - { id: branch, kind: action, use: git.branch, phase: Préparation }
-  - id: test_loop
-    kind: loop
+  - { id: test_label, kind: action, use: gh.issue_label, with: { state: testing }, phase: Test }
+  - { id: test, kind: pipeline, use: art-headless, pushes: true, phase: Test }
+  - id: test_comment
+    kind: action
+    use: gh.issue_comment
     phase: Test
-    max: 2
-    until: "steps.test.outputs.passed == true || !(steps.test_loop.iteration < settings.max_test_rounds)"
-    body:
-      - { id: test_label, kind: action, use: gh.issue_label, with: { state: testing } }
-      - { id: test, kind: pipeline, use: art-headless, pushes: true }
-      - id: test_comment
-        kind: action
-        use: gh.issue_comment
-        with: { body: "Test art-headless : passed={{ steps.test.outputs.passed }}", cost_footer: true }
-        on_error: warn
-      - id: fix_test
-        kind: pipeline
-        use: art-fix
-        pushes: true
-        when: "steps.test.outputs.passed == false"
-        with: { report_from: test }
-  - { id: test_exhausted, kind: action, use: gh.issue_label, with: { state: blocked }, phase: Test, when: "steps.test.outputs.passed != true" }
-  - { id: test_escalate, kind: action, use: fail, phase: Test, with: { kind: business, message: "Test épuisé : issue bloquée" }, when: "steps.test.outputs.passed != true" }
-  - { id: ready, kind: action, use: gh.pr_ready, phase: Merge }
-  - { id: await, kind: action, use: gh.issue_label, with: { state: awaiting-merge }, phase: Merge }
-  - { id: merge_approval, kind: human, phase: Merge, prompt: "Merger la PR ?", choices: [approve] }
-  - { id: merge, kind: action, use: gh.merge, phase: Merge }
-  - { id: done, kind: action, use: gh.issue_label, with: { state: done }, phase: Merge }
+    with: { body: "Test art-headless : passed={{ steps.test.outputs.passed }}", cost_footer: true }
+    on_error: warn
+  # A test with no verdict (neither passed nor failed) is not a bug to raise: a human looks.
+  - { id: test_unknown_label, kind: action, use: gh.issue_label, with: { state: blocked }, phase: Test, when: "steps.test.outputs.passed != true && steps.test.outputs.passed != false" }
+  - { id: test_unknown_stop, kind: action, use: fail, phase: Test, with: { kind: business, message: "Test sans verdict : issue bloquée" }, when: "steps.test.outputs.passed != true && steps.test.outputs.passed != false" }
+  # Failed test: the bug issue, sub-issue of this ticket. `capped` means 3 bugs were already raised.
+  - id: bug
+    kind: action
+    use: bug.create
+    phase: Bug
+    with: { report: "{{ steps.test.outputs.report }}", summary: "{{ steps.test.outputs.summary }}", run_dir: "{{ steps.test.outputs.runDir }}" }
+    when: "steps.test.outputs.passed == false"
+  - { id: bug_capped_label, kind: action, use: gh.issue_label, with: { state: blocked }, phase: Bug, when: "steps.bug.outputs.capped == true" }
+  - id: bug_capped_comment
+    kind: action
+    use: gh.issue_comment
+    phase: Bug
+    with: { body: "Plafond atteint : {{ steps.bug.outputs.count }} bugs ont déjà été ouverts pour ce ticket (maximum 3). Le test échoue encore ; le ticket passe `blocked` et attend une décision humaine." }
+    when: "steps.bug.outputs.capped == true"
+    on_error: warn
+  - { id: bug_capped_stop, kind: action, use: fail, phase: Bug, with: { kind: business, message: "Plafond de 3 bugs atteint : issue bloquée" }, when: "steps.bug.outputs.capped == true" }
+  # The ticket waits for its bug in the `to-test` phase (open blocker).
+  - { id: bug_wait, kind: action, use: ticket.to_test, phase: Bug, when: "steps.test.outputs.passed == false" }
+  # Passed test: ready PR, then the human merge.
+  - { id: ready, kind: action, use: gh.pr_ready, phase: Merge, when: "steps.test.outputs.passed == true" }
+  - { id: await, kind: action, use: gh.issue_label, with: { state: awaiting-merge }, phase: Merge, when: "steps.test.outputs.passed == true" }
+  - { id: merge_approval, kind: human, phase: Merge, prompt: "Merger la PR ?", choices: [approve], when: "steps.test.outputs.passed == true" }
+  - { id: merge, kind: action, use: gh.merge, phase: Merge, when: "steps.test.outputs.passed == true" }
+  - { id: done, kind: action, use: gh.issue_label, with: { state: done }, phase: Merge, when: "steps.test.outputs.passed == true" }
   - { id: clean, kind: action, use: worktree.remove, phase: Nettoyage, on_error: warn }

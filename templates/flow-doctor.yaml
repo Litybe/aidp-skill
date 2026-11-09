@@ -1,0 +1,126 @@
+version: 5
+id: flow-doctor
+description: >
+  Investigates one broken pipeline incident for the daemon's doctor: a flow
+  ended failed or escalated, a native run stopped paused, a step stayed
+  running after its run ended, or a step waited external for over 30
+  minutes. The daemon gathers the evidence bundle (flow state.json, journal
+  and runtime, run-state.json, native-run.json, the stage replies and
+  results, the filtered tail of daemon.err.log, the PR status, the Unity
+  status) before the run starts; the run works in that bundle directory.
+  prepare → diagnose → report. The diagnose stage writes diagnosis.json:
+  category, cause, evidence[], confidence, action, params, needs_human,
+  proposed_patch, summary. The agent only proposes: the daemon checks the
+  action against its allowed list and its preconditions, executes it at most
+  once, and posts the comment. Nothing here writes to GitHub, the game, the
+  harness or Unity.
+
+  Started only by the daemon (one investigation at a time, outside the dev
+  and test slots, under the budget guard). Never started by hand.
+inputs:
+  incident: { required: true, kind: string, description: "Incident id: <key>/<step>@<iteration> or <key>/run:<run id>." }
+  bundle: { required: true, kind: string, description: "Absolute path of the incident's bundle; the evidence is under evidence/." }
+  feature: { required: false, kind: string, description: "Names the vault run folder." }
+settings:
+  knowledge_graph:
+    enabled: false
+stages:
+  - name: prepare
+    agent: executor
+    model: haiku
+    scope: { mode: stage_dir_only }
+    policy:
+      - "Never ask the user a question. Decide open points yourself and record them as assumptions."
+      - "Read only: the bundle, the repositories and `rtk gh` reads. No commit, no push, no branch switch, no GitHub write, no call that changes the daemon."
+      - "Never open, start, focus or stop Unity. Never edit the game's code, scenes, prefabs or assets. Never install, edit or run a setup of the harness (aidp, the skill, hooks)."
+    inputs:
+      incident: "{{ inputs.incident }}"
+      bundle: "{{ inputs.bundle }}"
+    with:
+      instructions: >
+        (1) Read `<bundle>/evidence/incident.json` (the incident: trigger,
+        key, ticket, step, iteration, run id, what detection saw, and the
+        list of copied files). (2) Read every listed file: flow-state.json
+        (steps, status, reason, detail, outputs), flow-journal.jsonl (the
+        transitions in order), flow-runtime.json (the run id of each pipeline
+        step), run-state.json and native-run.json (stage rows, reason),
+        stages/<stage>/ (replies and result.json), daemon.err.log.tail,
+        pr-status.json, unity-status.json. (3) Write context.json: incident,
+        trigger, ticket, flow status, failing step with its reason and
+        detail, a timeline (time, source file, event) of the last relevant
+        transitions, the last stage replies (stage, status, summary,
+        blocked_reason), the PR (number, state, mergeable, head sha, checks),
+        the Unity editor (running, heartbeat state and age, lastCompile,
+        lock holder and waiters), and the log lines that name the key, the
+        ticket or the run. Copy facts, never interpret them here.
+    outputs: [context.json]
+
+  - name: diagnose
+    agent: executor
+    model: sonnet
+    needs: [prepare]
+    scope: { mode: stage_dir_only }
+    policy:
+      - "Never ask the user a question. Read only, as in prepare: no GitHub write, no commit, no Unity, no edit of the game or of the harness."
+      - "`action` is exactly one of: retry_step, requeue_to_test, requeue_dev, abort_dead_flow_and_requeue, update_pr_branch, release_unity_lock, none. The daemon refuses any other name and records the refusal."
+      - "Never propose a merge, a gate approval, a force-push or a rebase. update_pr_branch updates by merge only."
+      - "A test that returns passed=false, or a review that finds real defects, is a product bug: category product_bug, action none. The doctor only treats failures of the pipeline."
+      - "Any doubt, or confidence below 0.7: needs_human true and action none. Never guess an action to look useful."
+      - "A defect of the harness: category harness_defect, action none, a unified diff in proposed_patch. Never apply it."
+      - "Every evidence item names a bundle file and quotes the timestamp or the log line it rests on."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      bundle: "{{ inputs.bundle }}"
+      task: >
+        Classify the incident and propose at most one allowed action. Known
+        pipeline failures (category → usual action): false_failure, the
+        report stage answered needs_review while the PR exists and its
+        recheck is clean → retry_step; run_ended_flow_running, the run is
+        done or failed but the flow step is still running → retry_step (the
+        daemon reconciles first); unity_reimport_not_frozen, the heartbeat
+        went silent while the editor imported or reloaded (state importing,
+        compiling or reloading, then idle again) → retry_step;
+        unity_modal_dialog, the editor runs, its heartbeat is stale and the
+        state never comes back → none, needs_human (a modal window needs a
+        person); budget_wait_silent, a step waits for budget with nothing
+        journaled → retry_step when the bundle shows the budget allows a run
+        again, else none; worktree_cap_saturated, git.worktree waits on
+        worktree_cap while the worktrees are held by blocked tickets → none,
+        needs_human; dead_flow_ownership, the ticket is skipped
+        owned-by-flow by a flow that is failed or escalated →
+        abort_dead_flow_and_requeue; meta_add_add_conflict, an add/add
+        conflict on the .meta of a folder several PRs created →
+        update_pr_branch when the merged result keeps one .meta, else
+        needs_human; rebase_conflict_only, `gh pr update-branch --rebase`
+        conflicts while the final trees do not → update_pr_branch;
+        head_moved_before_merge, the PR head changed between the read and the
+        merge → none, needs_human (the merge gate is a human's);
+        harness_defect; product_bug; other. release_unity_lock only when the
+        lock holder's flow is terminal; the daemon checks it again. Write
+        diagnosis.json: {"category": "<category>", "cause": "<one
+        sentence>", "evidence": [{"file": "<bundle file>", "at": "<time>",
+        "line": "<quoted line>"}], "confidence": <0..1>, "action": "<allowed
+        action>", "params": {<step | pr, repo | resource, only when needed>},
+        "needs_human": <bool>, "proposed_patch": <null or a unified diff>,
+        "summary": "<two sentences in French>"}.
+    outputs: [diagnosis.json]
+
+  - name: report
+    agent: executor
+    model: haiku
+    needs: [diagnose]
+    scope: { mode: stage_dir_only }
+    policy:
+      - "Never ask the user a question. No GitHub write: the daemon appends the result of the action and posts the comment itself."
+      - "Read only, as in prepare: no commit, no Unity, no edit of the game or of the harness."
+    inputs:
+      diagnosis: "{{ stages.diagnose.outputs.diagnosis }}"
+    with:
+      instructions: >
+        Write report.md in French, 8 lines at most, for the ticket's issue:
+        « Diagnostic », the category and the cause in one sentence, the two
+        strongest evidence items (file and time), the proposed action, and
+        « Intervention humaine requise » when needs_human is true. When
+        proposed_patch is set, say a harness patch is proposed in the vault
+        run folder; never paste it. No title, no greeting.
+    outputs: [report.md]

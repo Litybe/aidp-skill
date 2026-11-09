@@ -10,6 +10,7 @@ Un rendu généré à un multiple entier du canevas (Pixellab ne descend pas sou
 import argparse
 import json
 import sys
+from collections import Counter
 
 from PIL import Image
 
@@ -22,13 +23,28 @@ def fail(message):
     return 2
 
 
+def block_majority(image, size):
+    """Réduit par un facteur entier : chaque pixel prend la couleur majoritaire de son bloc, ou reste transparent."""
+    width, height = size
+    step_x, step_y = image.width // width, image.height // height
+    out = Image.new("RGBA", size, (0, 0, 0, 0))
+    source = image.load()
+    for y in range(height):
+        for x in range(width):
+            block = [source[x * step_x + i, y * step_y + j] for j in range(step_y) for i in range(step_x)]
+            visible = [pixel for pixel in block if pixel[3] > 0]
+            if len(visible) * 2 >= len(block):
+                out.putpixel((x, y), Counter(visible).most_common(1)[0][0])
+    return out
+
+
 def aligned(base, final):
     """Ramène les deux images à la même taille, ou renvoie None si elles ne se comparent pas."""
     if base.size == final.size:
         return base, final
     fx, fy = base.width / final.width, base.height / final.height
     if fx == fy and fx.is_integer() and fx > 1:
-        return base.resize(final.size, Image.NEAREST), final
+        return block_majority(base, final.size), final
     if final.width >= base.width and final.height >= base.height:
         return base, final.crop((0, 0, base.width, base.height))
     return None

@@ -153,7 +153,7 @@ stages:
       - "Never ask the user a question; decide open points and record them as assumptions. max_cost is the approval: no cost confirmation is needed below it."
       - "Every generation starts from the reference of reference.json: upload its PNG (get_upload_url, then upload:<id>) or use its `source`, and pass it to a tool that takes a reference (reference_image_url, reference_images, style_image, per the pixellab skill). Never generate from the prompt alone."
       - "The Pixellab render is the deliverable: import it into the `body` layer with image_import, export the project PNG, copy the render unchanged to pixellab.png in your stage dir (with `source`: its PNG). Never an empty body, a reference layer (_ref_*) or a grid left for later."
-      - "Canvas under Pixellab's 16 px minimum: generate at the smallest integer multiple of the canvas it accepts, then reduce by that factor with nearest neighbour."
+      - "Canvas under Pixellab's 16 px minimum: generate at the smallest integer multiple of the canvas it accepts, then reduce by that factor, each pixel taking the majority colour of its block (transparent when most of the block is)."
       - "Use the brief's Pixellab plan and the pixellab skill's best tools; never standard, pixflux, bitforge or legacy endpoints."
       - "Price every call before submitting it; never exceed max_cost in total. Wait with wait_for_jobs; retry a failed or unusable job at most once."
       - "Pass images as references (upload:, URLs, character:/object:/job:), never long base64; read palette data URLs from the assets file."

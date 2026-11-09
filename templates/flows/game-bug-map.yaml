@@ -1,0 +1,56 @@
+# Game map BUG lane: the fix of a bug issue raised by a failed test of a parent ticket (`bug.create` in `game-test-map`).
+# The bug issue is a sub-issue of its parent, carries the labels `bug` and `bug:map` (routing.yaml: `pixelhood-bug-map`) and a body marker
+# `<!-- aidp:bug parent=<n> base=feat/GH-<n> -->` that gives the mirror its base branch. Claim, worktree and branch (`fix/GH-<bug>`,
+# created from `origin/feat/GH-<parent>`, never from the default branch), map-produce (the bug report is the demand),
+# devil's advocate map-review <-> map-fix loop. The PR of the bug targets `feat/GH-<parent>`, never `main` (the pipelines read the
+# `base_branch` input the daemon takes from the ticket).
+# AUTOMATIC MERGE: when the review verdict is `done`, `gh.pr_ready` then `gh.merge` merge the PR into `feat/GH-<parent>` without a human
+# click (`gh.merge` keeps its head check and its merge gate: a red gate or a moved head escalates the step). A loop that runs out of
+# rounds without a `done` verdict labels the bug `blocked` and ends the run `escalated`: nothing is merged. GitHub only closes an issue
+# when its PR reaches the default branch, so `gh.issue_close` closes the bug after the merge: the parent, which waited on this open
+# blocker, goes back to the test lane by itself. The final PR of the parent toward `main` stays the human's decision.
+# Workspace: the default one, a worktree per ticket (dev lane, `dispatcher.slots`). No Unity editor is open on a worktree: the stages
+# do not run the compile gate nor the tests (`verification.compile = "deferred"`); the parent's test lane runs them again.
+# Loop `max` is a literal (the schema wants a u32); keep it equal to settings.max_review_rounds. The step ids `ready` and `merge` move
+# the ticket status to in-review and done.
+id: game-bug-map
+version: 1
+inputs:
+  ticket: { required: true }
+settings:
+  max_review_rounds: 2
+steps:
+  - { id: claim, kind: action, use: gh.issue_label, with: { state: in-progress }, phase: Préparation }
+  - { id: worktree, kind: action, use: git.worktree, phase: Préparation }
+  - { id: branch, kind: action, use: git.branch, phase: Préparation }
+  - id: produce
+    kind: pipeline
+    use: map-produce
+    phase: Réalisation
+    pushes: true
+  - id: review_loop
+    kind: loop
+    phase: Revue
+    max: 2
+    until: "steps.review.outputs.verdict == 'done' || !(steps.review_loop.iteration < settings.max_review_rounds)"
+    body:
+      - { id: review_label, kind: action, use: gh.issue_label, with: { state: review } }
+      - { id: review, kind: pipeline, use: map-review, pushes: false }
+      - id: review_comment
+        kind: action
+        use: gh.issue_comment
+        with: { body: "Revue map-review : {{ steps.review.outputs.verdict }}", cost_footer: true }
+        on_error: warn
+      - id: fix
+        kind: pipeline
+        use: map-fix
+        pushes: true
+        when: "steps.review.outputs.verdict == 'need-fix'"
+        with: { report_from: review }
+  - { id: review_exhausted, kind: action, use: gh.issue_label, with: { state: blocked }, phase: Revue, when: "steps.review.outputs.verdict != 'done'" }
+  - { id: review_escalate, kind: action, use: fail, phase: Revue, with: { kind: business, message: "Revue non validée : bug bloqué, rien n'est mergé" }, when: "steps.review.outputs.verdict != 'done'" }
+  - { id: ready, kind: action, use: gh.pr_ready, phase: Merge }
+  - { id: merge, kind: action, use: gh.merge, phase: Merge }
+  - { id: done, kind: action, use: gh.issue_label, with: { state: done }, phase: Merge }
+  - { id: close, kind: action, use: gh.issue_close, phase: Merge }
+  - { id: clean, kind: action, use: worktree.remove, phase: Nettoyage, on_error: warn }

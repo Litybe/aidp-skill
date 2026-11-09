@@ -40,6 +40,7 @@ inputs:
   size: { required: false, kind: string, default: "", description: "Canvas / tile size (e.g. 32x32, tile 16). Empty: take it from mcp__aseprite__project_profile." }
   palette: { required: false, kind: string, default: "rosy-42", description: "Palette name in the pixellab skill assets/ (<name>.json, .gpl, .dataurl.txt) or a .gpl/.hex path. Every pixel must end on it." }
   max_cost: { required: false, kind: int, default: 10, description: "Ceiling of Pixellab generations for this issue (user approval). Above it, stop and report blocked." }
+  base_branch: { required: false, kind: string, default: "", description: "Branch the ticket starts from and its PR targets, when it is not the default one (a bug ticket: its parent's branch). Empty: the default branch." }
   feature: { required: false, kind: string, description: "Asset or ticket label; names the vault run folder." }
 settings:
   knowledge_graph:
@@ -50,11 +51,13 @@ stages:
     model: haiku
     scope: { mode: repo_wide }
     policy:
+      - "Base branch: context.baseBranch is the input `base_branch` when it is not empty (a bug ticket starts from its parent's branch and its PR targets it), else the repository default branch. Never fall back to the default branch when `base_branch` is set."
       - "Never ask the user a question. Decide open points yourself and record them as assumptions."
       - "No Pixellab call, no sprite edit. The only repository write is creating the working branch."
     inputs:
       issue: "{{ inputs.issue }}"
       prompt: "{{ inputs.prompt }}"
+      base_branch: "{{ inputs.base_branch }}"
     with:
       instructions: >
         (1) `rtk gh repo view --json nameWithOwner,defaultBranchRef`. (2) When

@@ -832,3 +832,7 @@ de ce qui a été fait s'affiche. Les artefacts déjà produits restent dans le 
 *Fichiers de référence : [SKILL.md](SKILL.md) (procédure de Claude), [AGENTS.md](AGENTS.md), [docs/agents-reference.md](docs/agents-reference.md)
 (référence complète : contrats de données, schémas, catalogue détaillé), `templates/` (les
 pipelines), `schema/` (les schémas JSON), `agents/` (les 4 sous-agents).*
+
+## Bugs automatiques après un test en échec
+
+Quand un test de jeu (`game-test-code`, `game-test-art`, `game-test-map`) échoue, aidp ouvre lui-même une issue `fix(GH-n): ...` (label `bug`, sous-issue du ticket) et le ticket attend sa correction en phase `to-test`. Le bug est corrigé sur `fix/GH-<bug>` depuis `feat/GH-<n>` et fusionné automatiquement dans `feat/GH-<n>` si la revue valide ; sinon il reste `blocked`. Le ticket repasse en test à la fermeture du bug. Maximum 3 bugs par ticket, puis `blocked`. La PR vers `main` reste à fusionner par vous.

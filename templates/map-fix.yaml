@@ -17,6 +17,7 @@ inputs:
   issue: { required: false, kind: string, default: "", description: "GitHub issue number; the PR linked to it is fixed." }
   pr: { required: false, kind: string, default: "", description: "PR number. Empty: the PR linked to `issue`, else the open PR of the current branch." }
   report_from: { required: false, kind: enum, values: [review, test], default: review, description: "What to fix: review = the ❌/⚠️ points and open threads of the last map-review; test = the failures of the last map-test / map-headless report." }
+  base_branch: { required: false, kind: string, default: "", description: "Branch the ticket starts from and its PR targets, when it is not the default one (a bug ticket: its parent's branch). Empty: the default branch." }
   feature: { required: false, kind: string, description: "Feature or ticket label; names the vault run folder." }
 settings:
   knowledge_graph:
@@ -27,12 +28,14 @@ stages:
     model: haiku
     scope: { mode: repo_wide }
     policy:
+      - "Base branch: context.baseBranch is the input `base_branch` when it is not empty (a bug ticket starts from its parent's branch and its PR targets it), else the repository default branch. Never fall back to the default branch when `base_branch` is set."
       - "Never ask the user a question. Decide open points yourself and record them as assumptions."
       - "Read only except checking out the PR head branch: no commit, no push, no GitHub write."
     inputs:
       issue: "{{ inputs.issue }}"
       pr: "{{ inputs.pr }}"
       report_from: "{{ inputs.report_from }}"
+      base_branch: "{{ inputs.base_branch }}"
     with:
       instructions: >
         (1) `rtk gh repo view --json nameWithOwner,defaultBranchRef`. (2) The

@@ -61,48 +61,55 @@ stages:
     needs: [prepare]
     scope: { mode: stage_dir_only }
     policy:
-      - "Never ask the user a question. Read only, as in prepare: no GitHub write, no commit, no Unity, no edit of the game or of the harness."
-      - "`action` is exactly one of: retry_step, requeue_to_test, requeue_dev, abort_dead_flow_and_requeue, update_pr_branch, release_unity_lock, none. The daemon refuses any other name and records the refusal."
+      - "Never ask the user a question. Read only, as in prepare: no GitHub write, no commit, no Unity, no edit of the game or of the harness. The daemon executes; you only propose."
+      - "`action` is exactly one of: retry_step, requeue_to_test, requeue_dev, abort_dead_flow_and_requeue, update_pr_branch, release_unity_lock, create_bug_ticket, open_harness_pr, none. Any other name is refused."
       - "Never propose a merge, a gate approval, a force-push or a rebase. update_pr_branch updates by merge only."
-      - "A test that returns passed=false, or a review that finds real defects, is a product bug: category product_bug, action none. The doctor only treats failures of the pipeline."
-      - "Any doubt, or confidence below 0.7: needs_human true and action none. Never guess an action to look useful."
-      - "A defect of the harness: category harness_defect, action none, a unified diff in proposed_patch. Never apply it."
+      - "Never propose, request or start a generation, a retouch or an edit of a sprite or of any asset: that is the art pipeline's work. A run of art stopped on art findings is not an incident; only a passing fault of an art run may be retried."
+      - "Act. `none` only with the reason written in `cause` (the fault already cleared by itself). `needs_human` only when no allowed action can help. Never hide behind doubt: pick the safest action that moves the ticket."
+      - "Confidence: 0.5 is enough for the reversible actions (retry_step, requeue_to_test, requeue_dev); the others need 0.7. Under the bar the daemon asks a human and runs nothing."
+      - "A test that returns passed=false, or a review with real defects, on a ticket: category product_bug, action create_bug_ticket (the daemon raises the bug issue under the ticket, capped at 3). Without a ticket: none, with the reason."
+      - "A defect of the harness: category harness_defect, a unified diff against origin/main in proposed_patch and action open_harness_pr, params.repo Litybe/aidp (crates/, docs/) or Litybe/aidp-skill (templates/, agents/). Never apply the patch yourself."
       - "Every evidence item names a bundle file and quotes the timestamp or the log line it rests on."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"
       bundle: "{{ inputs.bundle }}"
       task: >
-        Classify the incident and propose at most one allowed action. Known
-        pipeline failures (category → usual action): false_failure, the
-        report stage answered needs_review while the PR exists and its
-        recheck is clean → retry_step; run_ended_flow_running, the run is
-        done or failed but the flow step is still running → retry_step (the
-        daemon reconciles first); unity_reimport_not_frozen, the heartbeat
-        went silent while the editor imported or reloaded (state importing,
-        compiling or reloading, then idle again) → retry_step;
-        unity_modal_dialog, the editor runs, its heartbeat is stale and the
-        state never comes back → none, needs_human (a modal window needs a
-        person); budget_wait_silent, a step waits for budget with nothing
-        journaled → retry_step when the bundle shows the budget allows a run
-        again, else none; worktree_cap_saturated, git.worktree waits on
-        worktree_cap while the worktrees are held by blocked tickets → none,
-        needs_human; dead_flow_ownership, the ticket is skipped
-        owned-by-flow by a flow that is failed or escalated →
-        abort_dead_flow_and_requeue; meta_add_add_conflict, an add/add
-        conflict on the .meta of a folder several PRs created →
-        update_pr_branch when the merged result keeps one .meta, else
-        needs_human; rebase_conflict_only, `gh pr update-branch --rebase`
-        conflicts while the final trees do not → update_pr_branch;
-        head_moved_before_merge, the PR head changed between the read and the
-        merge → none, needs_human (the merge gate is a human's);
-        harness_defect; product_bug; other. release_unity_lock only when the
-        lock holder's flow is terminal; the daemon checks it again. Write
-        diagnosis.json: {"category": "<category>", "cause": "<one
-        sentence>", "evidence": [{"file": "<bundle file>", "at": "<time>",
-        "line": "<quoted line>"}], "confidence": <0..1>, "action": "<allowed
-        action>", "params": {<step | pr, repo | resource, only when needed>},
-        "needs_human": <bool>, "proposed_patch": <null or a unified diff>,
-        "summary": "<two sentences in French>"}.
+        Classify the incident and propose at most one allowed action, the
+        most useful one. Known pipeline failures (category → usual action):
+        mcp_connect_timeout, an MCP server CONNECT_TIMEOUT or "connection
+        timed out" → retry_step; unity_compile_timeout, the Unity compile
+        gate timed out → retry_step; session_lost, the agent session was lost
+        → retry_step; false_failure, the report stage answered needs_review
+        while the PR exists and its recheck is clean → retry_step;
+        run_ended_flow_running, the run is done or failed but the flow step
+        is still running → retry_step (the daemon reconciles first);
+        unity_reimport_not_frozen, the heartbeat went silent while the editor
+        imported or reloaded → retry_step; unity_modal_dialog, the editor
+        runs, its heartbeat is stale and never comes back → needs_human (a
+        modal window needs a person); budget_wait_silent, a step waits for
+        budget with nothing journaled → retry_step when the budget allows a
+        run again; worktree_cap_saturated, git.worktree waits on
+        worktree_cap while blocked tickets hold the worktrees → needs_human;
+        dead_flow_ownership, the ticket is skipped owned-by-flow by a failed
+        or escalated flow → abort_dead_flow_and_requeue; meta_add_add_conflict,
+        an add/add conflict on the .meta of a folder several PRs created →
+        update_pr_branch when the merged result keeps one .meta;
+        rebase_conflict_only, `gh pr update-branch --rebase` conflicts while
+        the final trees do not → update_pr_branch; head_moved_before_merge,
+        the PR head changed between the read and the merge → needs_human (the
+        merge gate is a human's); product_bug → create_bug_ticket;
+        harness_defect → open_harness_pr when you can write a patch that
+        applies, else needs_human; other. A step that failed and can run
+        again → retry_step; a ticket with no flow that must go back to a lane
+        → requeue_to_test (test step) or requeue_dev. release_unity_lock only
+        when the lock holder's flow is terminal; the daemon checks it again.
+        Write diagnosis.json: {"category": "<category>", "cause": "<one
+        sentence, always filled>", "evidence": [{"file": "<bundle file>",
+        "at": "<time>", "line": "<quoted line>"}], "confidence": <0..1>,
+        "action": "<allowed action>", "params": {<step | pr, repo | resource
+        | repo, summary, only when needed>}, "needs_human": <bool>,
+        "proposed_patch": <null or a unified diff>, "summary": "<two
+        sentences in French>"}.
     outputs: [diagnosis.json]
 
   - name: report

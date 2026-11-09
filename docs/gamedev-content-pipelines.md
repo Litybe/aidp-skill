@@ -31,21 +31,23 @@ Fichiers conservés : `pr.json` (`pr`, `branch`, `summary`, `url`, …), `verdic
 (« ## Revue avocat du diable — verdict : done \| need-fix »), `report.md`. Collision de clé :
 `steps.<id>.outputs.pr` est le numéro de `result.json`, le fichier `pr.json` passe sous `pr_file`.
 
-Ids de stage (C5) : `prepare`, `brief`, `generate`, `animate`, `fix`, `import`, `test`, `graph`,
+Ids de stage (C5) : `prepare`, `brief`, `generate`, `generate_reference`, `generate_pixellab`, `animate`, `fix`, `import`, `test`, `graph`,
 `rooms`, `write`, `review`, `verdict`, `report`. La politique de modèles du daemon (T5) remplace
 le modèle écrit dans le template ; les valeurs écrites sont les défauts.
 
 ## art-produce
 
 Issu de `pixelart` (conservé). `prepare` (haiku : issue, branche `art/<n>-<slug>`) →
-`brief` (opus, `pixel-art-director`) → `generate` (opus, `pixel-artist`) → `animate`
-(opus, `pixel-animator`, passe-plat pour un asset statique) → `verify` (opus, `pixel-reviewer`) →
-boucle `correction` (`fix` opus `pixel-fixer` + `recheck` sonnet, 2 tours) → `report` (haiku :
+`brief` (sonnet, `pixel-art-director`) → `generate_reference` (opus, `executor`, MCP Aseprite seul :
+référence dessinée à la main) → `generate_pixellab` (sonnet, `pixel-artist`, Pixellab depuis cette référence) → `animate`
+(opus, `pixel-animator`, passe-plat pour un asset statique) → `verify` (sonnet, `pixel-reviewer`) →
+boucle `correction` (`fix` sonnet `pixel-fixer` + `recheck` sonnet, 2 tours) → `report` (haiku :
 commit, push, PR draft `Closes #n`).
 
 - Entrées : `issue`, `prompt`, `asset_kind`, `source`, `style_ref`, `view`, `size`, `palette`
   (`rosy-42`), `max_cost` (défaut **10** générations par issue), `feature`.
-- Budget Pixellab (C6) : `brief`, `generate`, `animate` et `fix` écrivent `pixellab-usage.json`
+- Rendu final : c'est toujours celui de Pixellab, même si l'issue prescrit une grille ou un dessin à la main. Aseprite sert à la référence et aux retouches mineures ; `scripts/pixellab_fidelity.py` échoue si `fix` s'en écarte trop.
+- Budget Pixellab (C6) : `brief`, `generate_pixellab`, `animate` et `fix` écrivent `pixellab-usage.json`
   (`balanceBefore`, `balanceAfter`, `generations`, `jobs`, `recordedAt`) ; le plafond de 10
   générations, tous stages confondus, est rappelé dans leur policy. Le stage `report` additionne
   les usages dans le corps de PR. Le daemon agrège et applique la réserve ; il n'appelle jamais
@@ -104,7 +106,7 @@ testable » et fait échouer `passed` si elle couvre un critère. Entrées : `is
 
 ## doc-write et doc-review
 
-`doc-write` : `prepare` (haiku : plan de lecture par `00_INDEX`) → `write` (opus : édition de
+`doc-write` : `prepare` (haiku : plan de lecture par `00_INDEX`) → `write` (sonnet : édition de
 `.claude/BIBLE/`, `Docs/`, ROADMAP ; `01_canon` gagne, puis le document propriétaire ; une
 contradiction est notée dans `99_revue_critique/`, jamais effacée ; section « Questions ouvertes »
 conservée) → `report` (haiku : commit, push, PR draft). `doc-review` : `prepare` → `review` (sonnet :

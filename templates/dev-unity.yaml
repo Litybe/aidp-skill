@@ -121,7 +121,7 @@ stages:
 
   - name: implement
     agent: unity-issue-implementer
-    model: opus
+    model: sonnet
     needs: [plan]
     scope: { mode: repo_wide }
     inputs:
@@ -167,7 +167,7 @@ stages:
     body:
       - name: fix_playtest
         agent: unity-issue-implementer
-        model: opus
+        model: sonnet
         scope: { mode: repo_wide }
         policy:
           - "The PR already exists: never open a new one, never switch to the base branch."

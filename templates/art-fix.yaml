@@ -60,13 +60,13 @@ stages:
     policy:
       - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Memory proposals: write memory-proposals.json (`{\"proposals\": []}` when nothing qualifies), 5 max, non-obvious reusable lessons only, as templates/recipes/memory.md §3 says."
-      - "The PR exists: never open a new one, never merge, never mark it ready, never force-push."
-      - "Never ask the user a question. Decide open points yourself and record them as assumptions."
-      - "Correct by hand with the Aseprite MCP, in the existing style, on the palette; never rescale, blur or filter."
+      - "The PR exists: never open a new one, never merge, never mark it ready, never force-push. Do not start a pipeline or another Claude session. Never ask the user a question: decide open points yourself and record them as assumptions."
+      - "Minor touch-ups only on the Pixellab render, with the Aseprite MCP: off-palette or near-duplicate colours (color_remap), stray pixels, partial alpha, format, tags, durations. Never redraw, draw_grid, repaint a volume or the silhouette, replace the render, rescale, blur or filter."
+      - "An item asking for more than a minor touch-up: skip it, with regenerate_recommendation in fix.json."
+      - "Before editing, copy the PR's PNG to baseline.png in your stage dir. After your edits run `python D:/AIDP/skill/scripts/pixellab_fidelity.py --base <baseline.png> --final <exported PNG>`. Exit code 1: too much changed: restore the PNG and redo only the colour fixes."
       - "Allowed Pixellab calls: free ones (pixelart_workbench, save_to_asset, get_*) and 0.1-generation cleanups within what is left of the 10 generations per issue. No new generation. Lack of generations or a balance under the reserve: blocked."
       - "Write pixellab-usage.json (C6) in your stage dir when you call Pixellab: balanceBefore and balanceAfter (raw get_balance answers), generations (spent by this stage, 0 if none), jobs, recordedAt."
       - "No Unity: never open the Unity Editor or its MCP. Never weaken a criterion, a test or a scenario to make it pass."
-      - "Do not start a pipeline or another Claude session."
       - "No Unity .meta in a worktree (no Editor): never write or fake one. art-import creates them. An item that only asks for a .meta or a Unity import value is not yours: skip it, write « reporté au test Unity » in fix.json."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"

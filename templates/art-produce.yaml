@@ -3,13 +3,14 @@ id: art-produce
 description: >
   Gamedev route `art`, produce step: one GitHub issue that describes a pixel
   art asset becomes a draft PR with the asset. Stages: prepare (issue, branch),
-  brief (pixel-art-director), generate (pixel-artist, Pixellab), animate
-  (pixel-animator), verify (pixel-reviewer) and a correction loop
+  brief (pixel-art-director), generate_reference (hand-drawn reference,
+  Aseprite MCP only), generate_pixellab (pixel-artist, Pixellab from that
+  reference), animate (pixel-animator), verify (pixel-reviewer) and a correction loop
   (pixel-fixer + recheck, two rounds at most), then report (commit, push,
   draft PR `Closes #n`). Derived from `pixelart`, which stays as is.
 
   Pixellab budget: at most 10 generations per issue (input max_cost, the
-  user's approval). Every stage that calls Pixellab (brief, generate, animate,
+  user's approval). Every stage that calls Pixellab (brief, generate_pixellab, animate,
   fix) writes `pixellab-usage.json` in its stage dir (contract C6:
   balanceBefore, balanceAfter, generations, jobs, recordedAt); the daemon
   aggregates it per run and per ticket and holds the minimum reserve. The
@@ -21,7 +22,7 @@ description: >
   summary} of the report stage (mirrored in signals; pr.json keeps the
   details), plus
   findings.json with signals.fix_needed for the loop. Stage ids are the C5
-  ones (prepare, brief, generate, animate, fix, report); the model policy of
+  ones (prepare, brief, generate_reference, generate_pixellab, animate, fix, report); the model policy of
   the daemon overrides the models written here.
 
   Needs the MCP servers `pixellab` and `aseprite`, the skills `pixellab`,
@@ -71,7 +72,7 @@ stages:
   - name: brief
     description: Art direction - production brief, palette ramps, animation plan, priced Pixellab plan, acceptance criteria.
     agent: pixel-art-director
-    model: opus
+    model: sonnet
     needs: [prepare]
     skills: [pixellab, pixel-art, pixel-palette, pixel-animation, pixel-character, pixel-tileset]
     scope: { mode: stage_dir_only }
@@ -80,6 +81,8 @@ stages:
       - "Never ask the user a question; decide open points and record them as assumptions."
       - "No paid Pixellab call and no sprite edit: only free tools (get_balance, get_pro_flash_capabilities, get_*, pixelart_workbench inspect/score)."
       - "The priced plan must fit max_cost (10 generations per issue unless the input says otherwise); if even the minimal plan does not, report blocked with the cheapest viable plan."
+      - "Pixellab makes the final render; Aseprite only draws the reference and touches up minor defects. This overrides the issue: ignore any « Méthode » or spec asking to hand-draw the final sprite, to not deliver the Pixellab PNG, or to follow a pixel grid."
+      - "Never write a grid (blocking_grid, normative_grid, rows) for the final sprite: a description of pixels only feeds the reference and the prompt."
       - "Write pixellab-usage.json (contract C6) with the raw get_balance answer as balanceBefore and balanceAfter, generations 0, jobs [], recordedAt."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"
@@ -99,19 +102,58 @@ stages:
         silhouette and focal point, the pose-by-pose animation plan with ms
         per frame when asset_kind ends with _animation, the Pixellab plan
         (tool, parameters, exact English prompt, seed, cost) and the
-        acceptance criteria of pixellab/references/pro-standards.md.
+        acceptance criteria of pixellab/references/pro-standards.md. The
+        Pixellab plan starts from a reference drawn by hand in the next stage:
+        pick tools that take a reference image, and add to brief.json a
+        `reference` section saying what to draw (key pose, silhouette,
+        proportions, colour masses, canvas).
     outputs: [brief.json, art-brief.md, pixellab-usage.json]
 
-  - name: generate
-    description: Generate the base asset with the best Pixellab tool, lock it on the palette and import it into Aseprite.
-    agent: pixel-artist
+  # Hand-drawn reference, the starting point of the Pixellab stage. Not a deliverable: it stays out of git.
+  - name: generate_reference
+    description: Draw by hand, with the Aseprite MCP only, the reference image the Pixellab stage starts from.
+    agent: executor
     model: opus
     needs: [brief]
+    skills: [pixel-art, pixel-palette, pixel-character, pixel-tileset]
+    scope: { mode: production }
+    policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
+      - "Never ask the user a question; decide open points and record them as assumptions."
+      - "Draw only with the Aseprite MCP (mcp__aseprite__*). Never call a Pixellab tool, not even a free one, and never produce the image with a script."
+      - "The reference is not a deliverable: keep its .aseprite under `.aidp/art-reference/` of the project (ignored by git), never under Assets/."
+      - "When `source` is set, draw nothing: reuse it as the reference and say so in reference.json."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      memory: "{{ stages.prepare.outputs.memory-context }}"
+      brief: "{{ stages.brief.outputs.brief }}"
+      asset_kind: "{{ inputs.asset_kind }}"
+      source: "{{ inputs.source }}"
+    with:
+      instructions: >
+        Draw the `reference` section of the brief as one frame, the key pose:
+        silhouette first, then colour masses on the brief's palette, on the
+        brief's canvas and view, readable at 1x. Check it with preview and
+        lint, and correct it. Export one flattened PNG with a transparent
+        background to reference.png in your stage dir, and write reference.json
+        {"png": "<absolute path, or null when source is reused>", "aseprite":
+        "<path>", "source": "<source or null>", "canvas": "<WxH>", "palette":
+        "<name>", "notes": "<what Pixellab must keep: pose, proportions, colours>"}.
+    outputs: [reference.json]
+
+  - name: generate_pixellab
+    description: Generate the base asset with Pixellab from the hand-drawn reference, lock it on the palette and import it into Aseprite.
+    agent: pixel-artist
+    model: sonnet
+    needs: [generate_reference]
     skills: [pixellab, pixel-art, pixel-palette, pixel-character, pixel-tileset]
     scope: { mode: production }
     policy:
       - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Never ask the user a question; decide open points and record them as assumptions. max_cost is the approval: no cost confirmation is needed below it."
+      - "Every generation starts from the reference of reference.json: upload its PNG (get_upload_url, then upload:<id>) or use its `source`, and pass it to a tool that takes a reference (reference_image_url, reference_images, style_image, per the pixellab skill). Never generate from the prompt alone."
+      - "The Pixellab render is the deliverable: import it into the `body` layer with image_import, export the project PNG, copy the render unchanged to pixellab.png in your stage dir (with `source`: its PNG). Never an empty body, a reference layer (_ref_*) or a grid left for later."
+      - "Canvas under Pixellab's 16 px minimum: generate at the smallest integer multiple of the canvas it accepts, then reduce by that factor with nearest neighbour."
       - "Use the brief's Pixellab plan and the pixellab skill's best tools; never standard, pixflux, bitforge or legacy endpoints."
       - "Price every call before submitting it; never exceed max_cost in total. Wait with wait_for_jobs; retry a failed or unusable job at most once."
       - "Pass images as references (upload:, URLs, character:/object:/job:), never long base64; read palette data URLs from the assets file."
@@ -121,38 +163,40 @@ stages:
       context: "{{ stages.prepare.outputs.context }}"
       memory: "{{ stages.prepare.outputs.memory-context }}"
       brief: "{{ stages.brief.outputs.brief }}"
+      reference: "{{ stages.generate_reference.outputs.reference }}"
       asset_kind: "{{ inputs.asset_kind }}"
       source: "{{ inputs.source }}"
       max_cost: "{{ inputs.max_cost }}"
     with:
       instructions: >
-        Produce the static base of the asset (for an *_animation kind: the
-        item, character, UI element or tile to animate; reuse source when
-        given). Check every result (inspect, score, lint, AI defects), lock
+        Produce, from the reference, the static base of the asset (for an
+        *_animation kind: the item, character, UI element or tile to animate;
+        reuse source when given). Check every result (inspect, score, lint, AI defects), lock
         the palette (reduce_colors + save_to_asset) when off-palette or score
         < 85, download into the stage dir, import into an .aseprite in the
         project's sprite folder with the palette .gpl loaded, and write
         generation.json.
-    outputs: [generation.json, pixellab-usage.json]
+    outputs: [generation.json, pixellab.png, pixellab-usage.json]
 
   - name: animate
     description: Animate the asset per the brief (Pixellab + Aseprite timing); pass-through for a static asset.
     agent: pixel-animator
     model: opus
-    needs: [generate]
+    needs: [generate_pixellab]
     skills: [pixel-animation, pixellab, pixel-art, pixel-palette]
     scope: { mode: production }
     policy:
       - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Never ask the user a question; record choices as assumptions."
       - "Static asset_kind (no _animation suffix): write asset.json from generation.json with animated false and call no tool."
-      - "Spend only what is left of max_cost after the generate stage (its pixellab-usage.json says how much). Every animation ends on the palette, with ms timings, holds, a stable anchor and a clean loop."
+      - "Animate the Pixellab base with Pixellab's animation tools. Aseprite is for timing, tags, anchor and loop only: never redraw a frame."
+      - "Spend only what is left of max_cost after the generate_pixellab stage (its pixellab-usage.json says how much). Every animation ends on the palette, with ms timings, holds, a stable anchor and a clean loop."
       - "Write pixellab-usage.json (C6) in your stage dir: balanceBefore and balanceAfter (raw get_balance answers), generations (spent by this stage, 0 if none), jobs, recordedAt. Ceiling: 10 generations per issue, all stages together."
     inputs:
       memory: "{{ stages.prepare.outputs.memory-context }}"
       brief: "{{ stages.brief.outputs.brief }}"
-      generation: "{{ stages.generate.outputs.generation }}"
-      generate_usage: "{{ stages.generate.outputs.pixellab-usage }}"
+      generation: "{{ stages.generate_pixellab.outputs.generation }}"
+      generate_usage: "{{ stages.generate_pixellab.outputs.pixellab-usage }}"
       asset_kind: "{{ inputs.asset_kind }}"
       max_cost: "{{ inputs.max_cost }}"
     with:
@@ -166,7 +210,7 @@ stages:
   - name: verify
     description: Scored studio-level review of the asset against the brief and the pro standards.
     agent: pixel-reviewer
-    model: opus
+    model: sonnet
     needs: [animate]
     skills: [pixel-review, pixel-animation, pixel-palette, pixellab]
     scope: { mode: stage_dir_only }
@@ -174,6 +218,7 @@ stages:
       - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Read only: never modify the sprite, never call a paid Pixellab tool."
       - "Finding defects is success: reply completed once findings.json is written and re-read."
+      - "The Pixellab render is the deliverable: never ask to redraw, repaint or replace it by a grid. A defect too large for a minor touch-up is an open finding with regenerate: true and does not set fix_needed. A criterion prescribing exact pixels, a grid or hand drawing is at most minor."
     inputs:
       memory: "{{ stages.prepare.outputs.memory-context }}"
       brief: "{{ stages.brief.outputs.brief }}"
@@ -198,11 +243,12 @@ stages:
     body:
       - name: fix
         agent: pixel-fixer
-        model: opus
+        model: sonnet
         skills: [pixel-review, pixel-art, pixel-palette, pixel-animation, pixel-character, pixel-tileset, pixellab]
         scope: { mode: production }
         policy:
-          - "Correct by hand with the Aseprite MCP, in the existing style, on the palette; never rescale, blur or filter."
+          - "Minor touch-ups only on the Pixellab render, with the Aseprite MCP: off-palette or near-duplicate colours (color_remap), stray pixels, partial alpha, format, tags, durations. Never redraw, draw_grid, repaint a volume or the silhouette, replace the render, rescale, blur or filter."
+          - "After your edits run `python D:/AIDP/skill/scripts/pixellab_fidelity.py --base <input pixellab> --final <exported PNG>`. Exit code 1: too much changed: re-import the render with image_import, redo only the colour fixes, mark the rest skipped with regenerate_recommendation."
           - "Allowed Pixellab calls: free ones (pixelart_workbench, save_to_asset, get_*) and 0.1-generation cleanups within what is left of max_cost. No new generation."
           - "Write pixellab-usage.json (C6) in your stage dir: balanceBefore and balanceAfter (raw get_balance answers), generations (spent by this stage, 0 if none), jobs, recordedAt. Ceiling: 10 generations per issue, all stages together."
           - "Fix findings from blocking to minor; skip one only with a written reason."
@@ -210,6 +256,7 @@ stages:
           brief: "{{ stages.brief.outputs.brief }}"
           asset: "{{ stages.animate.outputs.asset }}"
           findings: "{{ stages.verify.outputs.findings }}"
+          pixellab: "{{ stages.generate_pixellab.outputs.pixellab }}"
           max_cost: "{{ inputs.max_cost }}"
           usage: "{{ stages.animate.outputs.pixellab-usage }}"
         with:
@@ -226,10 +273,12 @@ stages:
         scope: { mode: stage_dir_only }
         policy:
           - "Read only. Re-run the measures and the 1x look on the corrected asset; report what is still open."
+          - "Run `python D:/AIDP/skill/scripts/pixellab_fidelity.py --base <input pixellab> --final <exported PNG>`. Exit code 1 is a blocking finding: the Pixellab render was not preserved."
         inputs:
           brief: "{{ stages.brief.outputs.brief }}"
           asset: "{{ stages.animate.outputs.asset }}"
           fix: "{{ stages.fix.outputs.fix }}"
+          pixellab: "{{ stages.generate_pixellab.outputs.pixellab }}"
         with:
           instructions: >
             Same review as the verify stage on the corrected sprite and its
@@ -248,6 +297,7 @@ stages:
     policy:
       - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Never ask the user a question. No Pixellab call. Never merge, never mark the PR ready."
+      - "Reply status completed as soon as the PR exists: findings left open and the Unity checks still to do go in the PR body, they are never a reason for needs_review or blocked."
       - "Commit only the asset files (.aseprite, exported sheet / PNG / JSON, previews) on the working branch; never the base branch. No .meta (the Unity Editor makes them at the test step)."
       - "No Unity .meta in a worktree (no Editor): never write or fake one (guid, PPU, filter, compression, spriteBorder, pivot). art-import creates them at the test step."
     inputs:
@@ -256,7 +306,7 @@ stages:
       brief: "{{ stages.brief.outputs.brief }}"
       asset: "{{ stages.animate.outputs.asset }}"
       findings: "{{ stages.verify.outputs.findings }}"
-      usage_generate: "{{ stages.generate.outputs.pixellab-usage }}"
+      usage_generate: "{{ stages.generate_pixellab.outputs.pixellab-usage }}"
       usage_animate: "{{ stages.animate.outputs.pixellab-usage }}"
     with:
       instructions: >
@@ -266,10 +316,10 @@ stages:
         update the body of the existing PR of the branch; title
         `feat(art): <subject>`. Body: what was produced, files, size, palette,
         frame count and ms timings, the last verdict of findings.json (the
-        recheck of the correction loop when it ran: read the latest
-        findings.json of the run) with the findings left open, the Pixellab
+        recheck of the correction loop when it ran: `recheck/findings.json`
+        in the run dir, next to your stage dir) with the findings left open, the Pixellab
         generations spent (sum of the pixellab-usage.json files of brief,
-        generate, animate and fix) out of max_cost, then `Closes #<issue>`
+        generate_pixellab, animate and fix) out of max_cost, then `Closes #<issue>`
         when context.issue is set. (3) Write pr.json {"pr": <number>,
         "branch": "<branch>", "summary": "<one sentence>", "url": "<url>",
         "generations": <n>}. Also write result.json, the file

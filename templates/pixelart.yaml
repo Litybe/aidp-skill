@@ -123,7 +123,7 @@ stages:
   - name: verify
     description: Scored studio-level review of the asset against the brief and the pro standards.
     agent: pixel-reviewer
-    model: opus
+    model: sonnet
     needs: [animate]
     skills: [pixel-review, pixel-animation, pixel-palette, pixellab]
     scope: { mode: stage_dir_only }

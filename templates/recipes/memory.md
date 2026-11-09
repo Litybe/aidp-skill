@@ -69,6 +69,8 @@ dans leur dossier de stage, même vide :
 
 Règles :
 
+- **Ce format exact, aucun autre champ** : pas de `type`, `name`, `description`, `body`, `lesson`,
+  `why` ; ce n'est pas le format de l'auto-memory de Claude.
 - **5 au plus**, souvent 0 ou 1. `{ "proposals": [] }` est une réponse normale.
 - Seulement une leçon **non évidente et réutilisable** sur un autre ticket : un piège découvert, une
   convention du projet que le code ne montre pas, une décision et sa raison, une cause racine.

@@ -47,6 +47,14 @@ que si ses outils sont déjà là, et n'attends pas sa connexion.
 1. `rtk curl -s http://127.0.0.1:3001/api/unity/status` : `editor.running` doit valoir `true` et
    `editor.projectPath` désigner `context.projectRoot` (casse et `/`/`\` ignorés). Si la route ne répond
    pas, regarde le process `Unity.exe` et sa ligne de commande (`-projectpath`).
+   La même réponse porte `editor.heartbeat` (copie de `<projectRoot>/.aidp/editor/heartbeat.json`, écrit
+   par le package toutes les 2 s) : `state` (`idle`, `compiling`, `importing`, `compile-failed`,
+   `entering-play`, `playing`, `paused`, `reloading`, `quitting`), `activeScene`, `dirty`, `playtest`,
+   `lastError`, `lastGuard`. **Un `at` plus vieux que `staleAfterSeconds` (15 s) avec un process Unity
+   vivant et un état autre que `reloading` = éditeur bloqué** (boîte de dialogue, gel) : sors
+   `blocked: unity-editor` tout de suite, en citant l'heure du heartbeat, son `state`, `activeScene` et
+   `lastError` dans `summary`, au lieu d'attendre un timeout. Un heartbeat absent (package ancien) ne
+   bloque rien : les timeouts ci-dessous s'appliquent.
 2. **Éditeur fermé** ou **autre projet** ouvert : arrête-toi. Réponds `status: blocked`,
    `signals.blocked_reason: "unity-editor"`, avec « blocked: unity-editor » et la cause dans `summary`.
    Ne lance pas Unity, pas de batchmode, pas de computer use pour compiler.
@@ -57,6 +65,22 @@ que si ses outils sont déjà là, et n'attends pas sa connexion.
    (`rtk git branch --show-current`). Sinon `status: blocked`, `signals.blocked_reason: "unity-branch"`,
    « blocked: unity-branch » et les deux branches dans `summary`. **Jamais de `git switch` /
    `git checkout` de branche dans un stage** : la bascule est faite par le flow, pas par toi.
+
+## 0.5 Ce que le pont fait tout seul (garde d'éditeur)
+
+Avant chaque porte (C1, C2, C8), le package met l'éditeur dans un état neutre, sans boîte de dialogue :
+les scènes sales sont rechargées depuis le disque (ou sauvegardées, selon `ProjectSettings/AidpPlaytest.asset`),
+la scène d'édition `PlaytestArena` est ouverte seule, et `AssetDatabase.Refresh()` importe ce que tu as
+écrit pendant que la fenêtre n'avait pas le focus. Conséquences pour toi :
+
+- tu n'as **jamais** à ouvrir, recharger ou sauvegarder une scène, ni à demander un refresh : dépose la
+  requête et attends le résultat ; `lastGuard` du heartbeat dit ce qui a été fait ;
+- n'écris pas de fichier sous `Assets/` pendant qu'un scénario ou une suite PlayMode tourne
+  (`state: playing`) : la préférence *Recompile After Finished Playing* est posée par le package, la
+  compilation attend la fin du Play Mode, et ton résultat C2 arriverait avant qu'elle ait eu lieu.
+  Écris, puis demande une porte ;
+- dans les flows `game-test-*`, le step `unity.refresh` a déjà fait passer une compile gate après le
+  `git.checkout` : la première requête C1 du stage est courte, et un éditeur muet y a déjà été signalé.
 
 ## 1. Compile gate (contrat C1)
 
@@ -76,8 +100,9 @@ Une compilation = une requête identifiée par un `requestId` unique
    - `ok: true` : compile gate vert. Les warnings des fichiers que tu as touchés se corrigent aussi.
    - `ok: false` : corrige chaque erreur (`file:line`) et relance une **nouvelle** requête. Au plus
      5 requêtes par stage ; ensuite le stage échoue (`status: failed`) avec la dernière liste.
-   - Pas de fichier au bout de 600 s : regarde la fin de `<projectRoot>/Logs/Editor.log` (fenêtre
-     modale, domain reload bloqué, package absent), puis sors `blocked: unity-editor`.
+   - Pas de fichier au bout de 600 s, ou heartbeat périmé avant (§0.1) : regarde la fin de
+     `<projectRoot>/Logs/Editor.log` (fenêtre modale, domain reload bloqué, package absent), puis sors
+     `blocked: unity-editor` avec le heartbeat dans `summary`.
 4. Rapporte dans le JSON du stage : `verification.compile` = `{ ok, errors, warnings, durationMs,
    requestId }`. Ne déclare jamais `ok` pour une compilation qui n'a pas tourné.
 

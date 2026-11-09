@@ -6,7 +6,8 @@
 # (`fail` with kind business). Loop `max` is a literal (the schema wants a u32); keep it equal to settings.max_test_rounds.
 # Workspace: `workspace: project`. No worktree: every step runs in the MAIN checkout of the project (where the Unity Editor
 # is open). `git.checkout` is the first step: it needs a clean checkout (else `blocked: dirty-checkout`, label aidp:blocked,
-# comment listing the files, run escalated), then switches to the issue branch (the one the dev flow pushed). The run holds the
+# comment listing the files, run escalated), then switches to the issue branch (the one the dev flow pushed). `unity.refresh`
+# then runs one compile gate of the open editor so the reimport of the branch ends before the test stage. The run holds the
 # project's `unity-editor` resource (one test flow at a time) from that step until `git.restore` (before the merge approval)
 # gives the checkout back to the base branch; the daemon also restores when the run ends escalated, failed or cancelled.
 id: game-test-art
@@ -27,6 +28,18 @@ steps:
     when: "steps.checkout.outputs.blocked == true"
     on_error: warn
   - { id: checkout_stop, kind: action, use: fail, phase: Préparation, with: { kind: business, message: "blocked: dirty-checkout" }, when: "steps.checkout.outputs.blocked == true" }
+  # The editor reimports and recompiles the new branch under control (one compile gate C1) before the test stage: compile errors
+  # are not a stop here (the test stage reports them), a silent editor is (`blocked: unity-editor`, with its last heartbeat).
+  - { id: refresh, kind: action, use: unity.refresh, phase: Préparation }
+  - { id: refresh_label, kind: action, use: gh.issue_label, with: { state: blocked }, phase: Préparation, when: "steps.refresh.outputs.blocked == true" }
+  - id: refresh_comment
+    kind: action
+    use: gh.issue_comment
+    phase: Préparation
+    with: { body: "{{ steps.refresh.outputs.message }}" }
+    when: "steps.refresh.outputs.blocked == true"
+    on_error: warn
+  - { id: refresh_stop, kind: action, use: fail, phase: Préparation, with: { kind: business, message: "blocked: unity-editor" }, when: "steps.refresh.outputs.blocked == true" }
   - id: test_loop
     kind: loop
     phase: Test Unity

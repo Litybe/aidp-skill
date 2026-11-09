@@ -68,7 +68,7 @@ stages:
       - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report."
       - "Never ask the user a question. Headless: never start the Unity Editor, never call the Unity MCP (mcp__unity-mcp__*), no computer use. The Aseprite MCP is allowed."
       - "Read-only on the assets: never edit a .png or .aseprite, never weaken a criterion to make it pass. Only the .meta files made by scripts/unity_meta.py may be written."
-      - "Project rule: the Pixellab render is the deliverable. A criterion that imposes exact pixels, a grid or hand drawing is at most minor (a note), never a failure by itself."
+      - "Project rule: the Pixellab render is the deliverable. A criterion that imposes exact pixels, a colour list, a grid or hand drawing is at most minor (a note), never a failure by itself."
       - "Findings are a result, not a stop: reply status completed with passed false once the checks ran, even with major findings. Never needs_review or blocked for a finding; blocked only when the checks could not run."
       - "A criterion only Unity can verify (scene, Play Mode, clip played, import result) is `deferred` with its reason; it never fails. Never invent a result."
       - "Commit and push only the .meta files created by unity_meta.py, by name (never `git add -A`), on the PR branch, never with force. A refused push is `failed`."

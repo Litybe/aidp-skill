@@ -218,7 +218,7 @@ stages:
       - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Read only: never modify the sprite, never call a paid Pixellab tool."
       - "Finding defects is success: reply completed once findings.json is written and re-read."
-      - "The Pixellab render is the deliverable: never ask to redraw, repaint or replace it by a grid. A defect too large for a minor touch-up is an open finding with regenerate: true and does not set fix_needed. A criterion prescribing exact pixels, a grid or hand drawing is at most minor."
+      - "The Pixellab render is the deliverable: never ask to redraw, repaint or replace it by a grid. A defect too large for a minor touch-up is an open finding with regenerate: true and does not set fix_needed. A criterion prescribing exact pixels, a colour list, a grid or hand drawing is at most minor."
     inputs:
       memory: "{{ stages.prepare.outputs.memory-context }}"
       brief: "{{ stages.brief.outputs.brief }}"

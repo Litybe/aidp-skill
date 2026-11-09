@@ -74,7 +74,7 @@ stages:
       - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Read only: never modify the project, never use git, never call a paid Pixellab tool. Measure copies of the files in the stage dir."
       - "Devil's advocate: the PR is incomplete until each criterion is proven. Finding defects is success: reply completed once findings.json is written and re-read."
-      - "The Pixellab render is the deliverable: never ask to redraw it, repaint it or replace it by a grid. A criterion prescribing exact pixels, a grid or a hand-drawn method is at most minor. A defect too large for a colour or stray-pixel touch-up is a finding with regenerate: true, not a fix item."
+      - "The Pixellab render is the deliverable: never ask to redraw it, repaint it or replace it by a grid. A criterion prescribing exact pixels, a colour list, a grid or a hand-drawn method is at most minor. A defect too large for a colour or stray-pixel touch-up is a finding with regenerate: true, not a fix item."
       - "Never use the Unity Editor. Never judge a .meta: a missing .meta or any criterion needing a .meta or Unity import value (PPU, Point, mipmaps, compression, spriteBorder, pivot) is 🧪 « reporté au test Unity (art-import) », never ❌ or need-fix, not counted in the verdict. Other criteria stay strict."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"

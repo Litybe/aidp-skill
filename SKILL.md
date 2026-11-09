@@ -627,7 +627,7 @@ A native run carries an immutable `autonomous` flag. In an autonomous run every 
   labels) or `plan_tasks:` (compiled from the planner's `plan.json`). Extend via `/pipeline-new-v7`.
   `dev-aidp` and `dev-studio` are **plan-driven**. `templates/flows/` holds the flow definitions
   (`perso-delivery`); `templates/recipes/` the autonomous-session recipes the daemon reads and the shared
-  `unity-verify.md` (compile gate C1, EditMode/PlayMode, PlaytestDriver scenarios C2) that the four `unity-*` pipelines point their agents at.
+  `unity-verify.md` (headless batchmode: compile gate C1, EditMode suite C8; PlayMode is manual) that the four `unity-*` pipelines point their agents at.
 - `agents/` — the 4 generic sub-agents (analyzer / planner / executor / reviewer). Extend via
   `/agent-new-v7`.
 - `commands/` — the full v7 command set (`run-pipeline-v7`, `run-unity-dev-pipeline`,

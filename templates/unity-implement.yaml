@@ -14,13 +14,14 @@ description: >
   Agents: planner (generic, with the unity-csharp-dev skill) and
   unity-issue-implementer. They follow unity-csharp-dev, unity-shader-hlsl for
   shaders, and the shared recipe templates/recipes/unity-verify.md of the
-  skill. The Unity Editor stays open for the whole queue: nothing is compiled
-  in batchmode; the compile gate C1 goes through the file bridge (package
-  com.aidp.playtest). Editor open on `projectRoot` but file bridge silent: the stage ends
-  `blocked: unity-editor`. Editor NOT open on `projectRoot` (the dev lane runs in a worktree,
-  templates/recipes/unity-verify.md §0.0): no C1, no C8, no `blocked`; the stage writes the code
-  and the tests, reports `verification.compile = "deferred"` and the Unity test does the build.
-  The `unity-editor` resource is declared by the flow, not here.
+  skill. Verification is headless: the stages run Unity in `-batchmode
+  -nographics` in the ticket's worktree, the compile gate C1 (`-quit`) then
+  the EditMode suite C8 (`-runTests -testPlatform EditMode`). Never PlayMode,
+  never a PlaytestDriver scenario, never the Unity MCP, never computer use:
+  the PlayMode test is manual, from the « Test manuel en PlayMode » section
+  the PR body carries (one T-n per CA-n). No Unity executable, another
+  version than the project, no license, a timeout or an Editor already open
+  on the worktree: `blocked: unity-<reason>` (unity-verify.md §0).
 
   Outputs read by the flows (C4): `pr` (pr.json, with the PR number), `branch`
   and `summary` (result.json of the report stage, keys pr / branch / summary).
@@ -62,11 +63,13 @@ stages:
         branchPrefixes and the issue labels, the slug being the title (or the
         prompt's first line) in ASCII kebab-case, 40 characters at most. (7)
         Look for a PR already linked to the issue (references/github.md) and
-        record it, or null. (8) Do NOT compile or open Unity here and do not
-        look for the Editor: the Unity stages do (the Editor stays open,
-        nothing runs in batchmode). Write context.json with repo,
+        record it, or null. (8) Do NOT compile or run Unity here: the Unity stages do, in
+        batchmode. Record the Unity executable and the project version as
+        templates/recipes/unity-verify.md §0.2 resolves them (`unity_editor`,
+        null when not found, `unity_version`). Write context.json with repo,
         projectRoot (absolute), baseBranch, branch, branch_exists, issue,
-        prompt, track, pr (number or null) and config (defaults filled in).
+        prompt, track, pr (number or null), unity_editor, unity_version and
+        config (defaults filled in).
         Memory (contract C10, templates/recipes/memory.md of the skill): with the issue number, run `rtk aidp memory context --project "<projectRoot>" --issue GH-<issue> --route code --stage plan --budget 2000` (without an issue, drop `--issue`) and save its output as memory-context.md in your stage dir, unchanged; if the command fails, write memory-context.md holding only « Mémoire indisponible : <cause> » and go on. Read the BIBLE by its index (00_INDEX) and get any passage you need with `rtk aidp rag search "<query>" --project "<projectRoot>" --source bible --budget 1500`, never whole.
     outputs: [context.json, memory-context.md]
 
@@ -82,7 +85,7 @@ stages:
       - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Write the reproduction test ONLY: never touch the code under test, never fix the bug."
       - "Commit locally on the run's branch (`test(repro): ...`) but do NOT push and do NOT open a PR: the implement stage does."
-      - "The Unity Editor stays open: never run Unity in batchmode, never close it. Compile through the gate C1 of templates/recipes/unity-verify.md."
+      - "Headless only: Unity runs in `-batchmode -nographics` in this worktree (compile gate C1, EditMode C8 of templates/recipes/unity-verify.md). Never PlayMode, never a PlaytestDriver scenario, never the Unity MCP, never an Editor window."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"
       memory: "{{ stages.prepare.outputs.memory-context }}"
@@ -93,31 +96,29 @@ stages:
         (from the base branch), as your section « Lancé par aidp » says. Read
         the code the bug touches, then write ONE focused test that encodes
         the correct behaviour and so fails today: an EditMode test under the
-        testsRoot of the config when the bug lives in a service or a model;
-        a PlaytestDriver scenario
-        Assets/Tests/Playtest/Scenarios/issue-<n>-repro.json (schema C2 of
-        templates/recipes/unity-verify.md §3) when it only shows at runtime.
-        Run it as templates/recipes/unity-verify.md says (compile gate C1,
-        then the test through the open Editor) and check that it is RED for
-        the right reason: the assertion on the buggy behaviour, not a
-        compile error, a missing setup or an unrelated exception. Not red
-        (the bug does not reproduce, or the test cannot be made to fail for
-        the right reason after two attempts): do not commit anything, reply
-        blocked with « blocked: no-repro » in the summary, the evidence in
-        repro.json and the reason in signals.blocked_reason. Red: commit the
-        test and its .meta locally. Editor open but file bridge silent: « blocked: unity-editor »
-        (templates/recipes/unity-verify.md §0). Editor not open on projectRoot (deferred mode,
-        §0.0): write and commit the test without running it, repro.json "red": null and
-        "compile": "deferred", signals.red null; no « blocked: no-repro » Write repro.json: {"test":
-        "<fully qualified name or scenario id>", "file": "<path>", "kind":
-        "editmode|scenario", "red": true, "failure": "<the failing assertion
-        message>", "commit": "<sha>", "compile": {ok, warnings,
-        durationMs}}. Mirror red as signals.red.
+        testsRoot of the config, on the service, model or pure logic the
+        bug lives in (a bug that only shows in PlayMode gets the EditMode
+        test closest to its logic, and a manual T-n for the rest, said in
+        repro.json `manual_only`). Run it as templates/recipes/unity-verify.md
+        says (compile gate C1, then C8 with `-testFilter` on that test) and
+        check that it is RED for the right reason: the assertion on the
+        buggy behaviour, not a compile error, a missing setup or an
+        unrelated exception. Not red (the bug does not reproduce, or the
+        test cannot be made to fail for the right reason after two
+        attempts): do not commit anything, reply blocked with « blocked:
+        no-repro » in the summary, the evidence in repro.json and the reason
+        in signals.blocked_reason. Red: commit the test and its .meta
+        locally. Unity unusable (§0): reply blocked with the `unity-<reason>`.
+        Write repro.json: {"test": "<fully qualified name>", "file":
+        "<path>", "kind": "editmode", "red": true, "failure": "<the failing
+        assertion message>", "commit": "<sha>", "manual_only": "<what only
+        PlayMode shows, or null>", "compile": {ok, warnings, durationMs}}.
+        Mirror red as signals.red.
     outputs: [repro.json]
 
   # Plan before code: the planner reads the issue, the contextDocs and the code it touches and writes
-  # the implementation plan the implementer follows, plus the scenario table unity-test turns into
-  # PlaytestDriver scenarios later.
+  # the implementation plan the implementer follows, plus the manual PlayMode test the PR body carries
+  # for the human.
   - name: plan
     agent: planner
     model: opus
@@ -140,8 +141,8 @@ stages:
         test of the bug track: the plan's goal is to turn it green without
         weakening it. Read the contextDocs of the config that touch the
         subject, then the code the demand touches and its neighbours (scopes,
-        services, views, configs, ScriptableObjects, tests under testsRoot,
-        Assets/Scripts/Playtest). Follow the unity-csharp-dev skill (layers
+        services, views, configs, ScriptableObjects, tests under testsRoot).
+        Follow the unity-csharp-dev skill (layers
         Model → Config → Repository → Service → Presenter → View → Scope,
         VContainer, no magic values, tunable values in ScriptableObjects)
         and, for shader work,
@@ -157,14 +158,13 @@ stages:
         Étapes — ordered, one verifiable change each, citing the existing
         code to reuse with its path; (4) Tests EditMode — one per behaviour
         of each service created or modified, with test name, data and
-        expected result (and the T-n it covers); (5) Observabilité pour le
-        test Unity — for every CA-n, the PlaytestDriver probes
-        (IPlaytestProbe, [PlaytestProbe("name")]) and commands
-        (IPlaytestCommand) the later `unity-test` pipeline needs to assert
-        it, each with its fields and where it lives
-        (Assets/Scripts/Playtest/); the ones that already exist are reused,
-        the missing ones are files of section 2; the scenario itself
-        (scene, setup, steps, asserts) is NOT written here; (6) Actions
+        expected result (and the T-n it covers); (5) Test manuel en PlayMode
+        — for every CA-n an EditMode test cannot prove, one T-n in three
+        lines: scene or arena to open, actions (keyboard or gamepad),
+        observable expected result; reuse the T-n of the issue when they fit,
+        and say which CA-n need no PlayMode because section 4 proves them.
+        Nothing automated plays the game: no probe, no scenario, no
+        PlaytestDriver; (6) Actions
         manuelles dans l'éditeur — what only the Editor can do (assign a
         reference, create a ScriptableObject asset, add a component or
         LifetimeScope to a scene), each doable in one minute; (7) Risques et
@@ -179,8 +179,8 @@ stages:
     scope: { mode: repo_wide }
     policy:
       - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
-      - "The Unity Editor stays open: never run Unity in batchmode, never close the Editor, never change branch while it is open."
-      - "No playtest and no computer use: the Unity test is the `unity-test` pipeline, later in the flow."
+      - "Headless only: Unity runs in `-batchmode -nographics` in this worktree (compile gate C1, EditMode C8 of templates/recipes/unity-verify.md). Never PlayMode, never a PlaytestDriver scenario, never the Unity MCP, never computer use, never an Editor window."
+      - "Never change branch."
       - "Never mark the PR ready, never merge."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"
@@ -190,24 +190,24 @@ stages:
       task: >
         Implement the demand of `context` and open the draft PR, as your
         section « Lancé par aidp » says. Follow `plan` (plan.md): its files,
-        order, EditMode tests, probes and manual actions are your plan; a
-        deviation is an assumption with its reason. When `repro` is not
+        order, EditMode tests, manual PlayMode tests and manual actions are
+        your plan; a deviation is an assumption with its reason. When `repro` is not
         empty (bug track), its test is already committed on the branch: the
         fix must turn it green, never edit or delete it to pass, and report
         its result in implementation.json. Verify with the compile gate C1
-        and the EditMode tests as templates/recipes/unity-verify.md §1-§2
-        say (the Editor is open: no batchmode); fix every error and every
-        failing test before the PR. Editor open but file bridge silent or compile gate
-        without result: reply blocked, « blocked: unity-editor » (§0). Editor not open on
-        projectRoot (deferred mode, §0.0): no compile gate, no tests, no blocked; say « compile
-        et tests différés au test Unity » in « Vérification » and set compile "deferred" The PR is
+        and the whole EditMode suite C8 as templates/recipes/unity-verify.md
+        §1-§2 say (batchmode in this worktree); fix every error and every
+        failing test before the PR; commit the .meta files batchmode
+        created. Unity unusable (§0): reply blocked with the
+        `unity-<reason>` in the summary and signals.blocked_reason. The PR is
         a DRAFT, its body ends with `Closes #<issue>` when there is an
         issue, and holds the sections « Description », « Critères
         d'acceptation » (CA-n with where it is met), « Vérification »
-        (compile gate C1 result, EditMode counts), « Actions manuelles dans
-        l'éditeur » and « Observabilité pour le test Unity » (the probes and
-        commands the plan lists). Do not write a « Scénarios de test » section
-        or a playtest: `unity-test` does it. When `context.pr` is set, the PR
+        (compile gate C1 result, EditMode counts, the Unity version),
+        « Actions manuelles dans l'éditeur » and « Test manuel en PlayMode »
+        (the T-n table of the plan: T-n → CA-n, scene, actions, expected
+        result; the human plays it before the merge). Nothing in the PR
+        claims a PlayMode result: nobody played it yet. When `context.pr` is set, the PR
         exists: commit and push on its branch and update its body instead of
         opening a new one. pr.json carries number, url, branch and
         summary (one sentence on what was implemented). Reply completed with
@@ -233,13 +233,14 @@ stages:
       instructions: >
         Write report.md: PR link (draft), acceptance criteria covered (from
         the plan and implementation.json), the compile gate C1 and EditMode
-        results that really ran, the reproduction test and its red → green
-        result when the `repro` file exists, manual actions in the Editor, the
+        results that really ran (batchmode), the reproduction test and its
+        red → green result when the `repro` file exists, manual actions in
+        the Editor, the manual PlayMode tests left to the human, the
         implementer's assumptions, and the next step: `unity-review` on this
         PR. Also write result.json, the file the flows read:
         {"pr": <PR number>, "branch": "<PR head branch>", "summary": "<two
         sentences: what was implemented, what is verified>", "track":
-        "<standard|bug>", "compile_ok": <bool, null when deferred>, "editmode_failed": <n, null when deferred>,
+        "<standard|bug>", "compile_ok": <bool>, "editmode_failed": <n>,
         "repro_green": <bool or null when no repro>}. Mirror pr and branch
         as signals.
     outputs: [report.md, result.json]

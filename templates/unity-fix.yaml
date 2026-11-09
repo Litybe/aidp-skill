@@ -4,12 +4,14 @@ description: >
   Fix a Unity PR after a review or a failed Unity test, then push. prepare →
   fix. `report_from: review` (default): the points ❌ / ⚠️ of the last
   devil's advocate review (`unity-review`) and the unresolved review threads,
-  agent and human. `report_from: test`: the scenarios and tests reported KO by
-  the last `unity-test` comment of the PR. Either way: fix with the
-  unity-csharp-dev rules, compile gate C1 (the Editor stays open, no
-  batchmode), tests, push on the PR's branch, answer on every thread (review
-  mode) and post one `unity-fix-summary` comment. A fix never weakens a test
-  or a scenario to make it pass.
+  agent and human. `report_from: test`: the compile errors and the EditMode
+  tests reported KO by the last `unity-test` comment of the PR. Either way:
+  fix with the unity-csharp-dev rules, compile gate C1 and EditMode suite C8
+  in batchmode in the ticket's worktree (templates/recipes/unity-verify.md),
+  push on the PR's branch, answer on every thread (review mode) and post one
+  `unity-fix-summary` comment. A fix never weakens a test to make it pass.
+  Never PlayMode: what only PlayMode can show is left to the human, in the
+  « Test manuel en PlayMode » section of the PR body, kept up to date.
 
   Used twice by the `game-code` flow: in the review ⇄ fix loop, then in the
   test ⇄ fix loop. The PR stays a draft: `ready` and the merge belong to the
@@ -19,15 +21,12 @@ description: >
   result.json of the fix stage (fix.json holds the details).
 
   Agent: unity-review-fixer. Shared recipe: templates/recipes/unity-verify.md.
-  Editor open but file bridge silent: the stage ends `blocked: unity-editor`. In the review
-  loop of a dev flow (`report_from: review`, worktree, no editor open on `projectRoot`:
-  templates/recipes/unity-verify.md §0.0) the stage runs no C1 and no C8, reports
-  `verification.compile = "deferred"` and never blocks for that. `report_from: test` runs in the
-  main checkout of the test lane, editor open: compile gate and tests as before.
+  No Unity executable, another version than the project, no license, a timeout or an Editor
+  already open on the worktree: `blocked: unity-<reason>` (unity-verify.md §0).
 inputs:
   issue: { required: false, kind: string, default: "", description: "GitHub issue number; the PR linked to it is fixed." }
   pr: { required: false, kind: string, default: "", description: "PR number. Empty: the PR linked to `issue`, else the open PR of the current branch." }
-  report_from: { required: false, kind: enum, values: [review, test], default: review, description: "What to fix: review = the ❌/⚠️ points and open threads of the last unity-review; test = the KO scenarios and tests of the last unity-test comment." }
+  report_from: { required: false, kind: enum, values: [review, test], default: review, description: "What to fix: review = the ❌/⚠️ points and open threads of the last unity-review; test = the compile errors and failing EditMode tests of the last unity-test comment." }
   feature: { required: false, kind: string, description: "Feature or ticket label; names the vault run folder." }
 settings:
   knowledge_graph:
@@ -39,7 +38,7 @@ stages:
     scope: { mode: stage_dir_only }
     policy:
       - "Never ask the user a question. Decide open points yourself and record them as assumptions."
-      - "Read only: no commit, no push, no branch switch, no GitHub write. Do not open or compile Unity."
+      - "Read only: no commit, no push, no branch switch, no GitHub write. Do not run Unity."
     inputs:
       issue: "{{ inputs.issue }}"
       pr: "{{ inputs.pr }}"
@@ -62,9 +61,9 @@ stages:
         the last review whose body contains `unity-review-summary` that no
         `unity-fix-summary` comment answered yet, and the general PR
         comments of a human posted after that review. test: the last PR
-        comment containing `<!-- unity-test` (its rows with result `fail`:
-        scenario or test id, criterion CA-n, expression, actual value,
-        message), plus the unresolved threads. Count the items
+        comment containing `<!-- unity-test` (its compile errors: file,
+        line, message; its failing EditMode tests: full name, message),
+        plus the unresolved threads. Count the items
         (`open_items`, `has_open_items`). (8) Fix round: 1 + the number of PR
         comments containing `unity-fix-summary`. Write context.json with
         repo, projectRoot, baseBranch, branch (the PR head), branch_exists:
@@ -85,9 +84,8 @@ stages:
       - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Memory proposals: write memory-proposals.json (`{\"proposals\": []}` when nothing qualifies), 5 max, non-obvious reusable lessons only, as templates/recipes/memory.md §3 says."
       - "The PR exists: never open a new one, never merge, never mark it ready."
-      - "The Unity Editor stays open: never run Unity in batchmode, never close it, never change branch."
-      - "Scenarios use the PlaytestArena scene (no Level_* in `scene`) and `spawn` for test objects; never modify a Level_* for a test (unity-verify.md §3)."
-      - "Never weaken, skip or delete a test or a PlaytestDriver scenario to make it pass; a scenario that is wrong is fixed only with the evidence in the report and said in the summary."
+      - "Headless only: Unity runs in `-batchmode -nographics` in this worktree (compile gate C1, EditMode C8 of templates/recipes/unity-verify.md). Never PlayMode, never a PlaytestDriver scenario, never the Unity MCP, never computer use, never an Editor window. Never change branch."
+      - "Never weaken, skip or delete a test to make it pass; a test that is wrong is fixed only with the evidence in the report and said in the summary."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"
       memory: "{{ stages.prepare.outputs.memory-context }}"
@@ -101,22 +99,23 @@ stages:
         (`context.report_from` says whether they come from the review or from
         a failed Unity test), within the scope of the issue and the rules of
         unity-csharp-dev, as your section « Lancé par aidp » says. For a
-        `test-ko` item: reproduce it from its expression and actual value,
-        fix the code (or the missing probe or command of
-        Assets/Scripts/Playtest/), never the expectation. After every batch of
-        edits run the compile gate C1 and the EditMode tests as
-        templates/recipes/unity-verify.md §1-§2 say; a fix that does not
-        compile is not pushed. Editor open but file bridge silent: reply blocked, « blocked:
-        unity-editor ». Editor not open on projectRoot (review loop in a worktree, deferred mode,
-        §0.0): no C1, no C8, no blocked; re-read your edits with care, set "compile": "deferred",
-        "tests": "deferred" in fix.json Commit (`fix(review|test): ... (#<issue>)`), push on the
+        `test-ko` item: a compile error is fixed at its file:line; a failing
+        EditMode test is reproduced with `-testFilter`, then the code is
+        fixed, never the expectation. After every batch of edits run the
+        compile gate C1 and the whole EditMode suite C8 as
+        templates/recipes/unity-verify.md §1-§2 say (batchmode in this
+        worktree); a fix that does not compile or fails a test is not
+        pushed; commit the .meta files batchmode created. Unity unusable
+        (§0): reply blocked with the `unity-<reason>`. When a fix changes a
+        behaviour the « Test manuel en PlayMode » section of the PR body
+        describes, update that section. Commit (`fix(review|test): ... (#<issue>)`), push on the
         PR's branch (never force), reply on EACH review thread with what you
         did and the commit, resolve the fixed ones, leave a thread open with
         the reason when you did not fix it (wontfix with evidence, or
         blocked). Post ONE PR comment marked `unity-fix-summary` (round
         `context.fix_round`): the table item / status (✅ fixed, ⏸️ left) /
-        evidence (commit, file:line, test), then « Reste manuel ». Items you
-        could not verify without Play Mode go to « Reste manuel », not
+        evidence (commit, file:line, test), then « Reste manuel ». Items only
+        PlayMode can verify go to « Reste manuel » with their T-n, not
         invented. Write fix.json: {"pushed", "commits", "items": [{id,
         status, evidence}], "fixed_refs", "touched" (the behaviours your fixes
         changed, one line each, for the next unity-test), "open_blocking",

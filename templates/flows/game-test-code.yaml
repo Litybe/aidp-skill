@@ -1,32 +1,24 @@
-# Game code test lane: the Unity test of an issue whose development ended (phase `to-test`), then the merge.
-# Started by the dispatcher (never by hand, except through POST /api/tickets/:key/start) as the `test_flow` of the route,
-# when the test lane of the project is free: `dispatcher.test_slots` (1) test flows at a time per project.
-# unity-test <-> unity-fix loop (`report_from: test`), PR ready, human merge. Labels `aidp:*` are set by gh.issue_label, every
-# test is commented on the issue (gh.issue_comment). A loop that runs out of rounds sets `blocked` and ends the run `escalated`
-# (`fail` with kind business). Loop `max` is a literal (the schema wants a u32); keep it equal to settings.max_test_rounds.
-# Workspace: `workspace: project`. No worktree: every step runs in the MAIN checkout of the project (where the Unity Editor
-# is open). `git.checkout` is the first step: it needs a clean checkout (else `blocked: dirty-checkout`, label aidp:blocked,
-# comment listing the files, run escalated), then switches to the issue branch (the one the dev flow pushed). The run holds the
-# project's `unity-editor` resource (one test flow at a time) from that step until `git.restore` (before the merge approval)
-# gives the checkout back to the base branch; the daemon also restores when the run ends escalated, failed or cancelled.
+# Game code test lane: the headless verification of an issue whose development ended (phase `to-test`), then PR ready.
+# Started by the dispatcher (never by hand, except through POST /api/tickets/:key/start) as the `test_flow` of the route.
+# unity-test <-> unity-fix loop (`report_from: test`), PR ready, label `awaiting-merge`, worktree removed, the flow ends
+# `done`. Labels `aidp:*` are set by gh.issue_label, every test is commented on the issue (gh.issue_comment). A loop that
+# runs out of rounds sets `blocked` and ends the run `escalated` (`fail` with kind business). Loop `max` is a literal (the
+# schema wants a u32); keep it equal to settings.max_test_rounds.
+# Workspace: the default one, a worktree per ticket (`git.worktree` then `git.branch`, which reuses the branch the dev flow
+# pushed). No Editor is open on a worktree: unity-test runs Unity in batchmode there (compile gate C1, EditMode suite C8;
+# templates/recipes/unity-verify.md). No `workspace: project`, no `unity-editor` resource: a test flow occupies a dev slot
+# (`dispatcher.slots` bounds the Unity batchmode processes that run at once).
+# No PlayMode here: the PR comment of unity-test carries the « À tester à la main en PlayMode » check-list. The human plays
+# it, then merges the PR on GitHub; the dispatcher moves the ticket to `done` when it sees the PR merged.
 id: game-test-code
 version: 1
 inputs:
   ticket: { required: true }
 settings:
   max_test_rounds: 2
-workspace: project
 steps:
-  - { id: checkout, kind: action, use: git.checkout, phase: Préparation }
-  - { id: checkout_label, kind: action, use: gh.issue_label, with: { state: blocked }, phase: Préparation, when: "steps.checkout.outputs.blocked == true" }
-  - id: checkout_comment
-    kind: action
-    use: gh.issue_comment
-    phase: Préparation
-    with: { body: "{{ steps.checkout.outputs.message }}" }
-    when: "steps.checkout.outputs.blocked == true"
-    on_error: warn
-  - { id: checkout_stop, kind: action, use: fail, phase: Préparation, with: { kind: business, message: "blocked: dirty-checkout" }, when: "steps.checkout.outputs.blocked == true" }
+  - { id: worktree, kind: action, use: git.worktree, phase: Préparation }
+  - { id: branch, kind: action, use: git.branch, phase: Préparation }
   - id: test_loop
     kind: loop
     phase: Test Unity
@@ -34,11 +26,11 @@ steps:
     until: "steps.test.outputs.passed == true || !(steps.test_loop.iteration < settings.max_test_rounds)"
     body:
       - { id: test_label, kind: action, use: gh.issue_label, with: { state: testing } }
-      - { id: test, kind: pipeline, use: unity-test, pushes: true }
+      - { id: test, kind: pipeline, use: unity-test, pushes: false }
       - id: test_comment
         kind: action
         use: gh.issue_comment
-        with: { body: "Test unity-test : passed={{ steps.test.outputs.passed }}", cost_footer: true }
+        with: { body: "Test unity-test (headless) : passed={{ steps.test.outputs.passed }}", cost_footer: true }
         on_error: warn
       - id: fix_test
         kind: pipeline
@@ -50,7 +42,10 @@ steps:
   - { id: test_escalate, kind: action, use: fail, phase: Test Unity, with: { kind: business, message: "Test épuisé : issue bloquée" }, when: "steps.test.outputs.passed != true" }
   - { id: ready, kind: action, use: gh.pr_ready, phase: Merge }
   - { id: await, kind: action, use: gh.issue_label, with: { state: awaiting-merge }, phase: Merge }
-  - { id: restore, kind: action, use: git.restore, phase: Merge }
-  - { id: merge_approval, kind: human, phase: Merge, prompt: "Merger la PR ?", choices: [approve] }
-  - { id: merge, kind: action, use: gh.merge, phase: Merge }
-  - { id: done, kind: action, use: gh.issue_label, with: { state: done }, phase: Merge }
+  - id: manual_comment
+    kind: action
+    use: gh.issue_comment
+    phase: Merge
+    with: { body: "PR prête. Reste à toi : le test manuel en PlayMode (check-list dans le dernier commentaire unity-test de la PR), puis le merge sur GitHub." }
+    on_error: warn
+  - { id: clean, kind: action, use: worktree.remove, phase: Nettoyage, on_error: warn }

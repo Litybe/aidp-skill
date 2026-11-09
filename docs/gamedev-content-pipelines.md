@@ -137,11 +137,20 @@ Deux voies (contrat C13). **Voie de dev**, en parallèle : `game-code`, `game-ar
 `git.branch` → produire (`pushes: true`, branche et PR draft poussées) → boucle revue (2 tours :
 `aidp:review`, pipeline de revue, `gh.issue_comment` du verdict, correction si `verdict == 'need-fix'`) →
 **stop** : `ticket.to_test` (label `aidp:to-test` et phase `to-test` du ticket) → `worktree.remove`, le flow
-finit `done`. Les stages de dev ne lancent ni compile gate C1 ni tests C8 (`verification.compile =
-"deferred"`, `unity-verify.md` §0.0).
+finit `done`. Route `code` : les stages Unity vérifient en headless dans le worktree (Unity en batchmode,
+compile gate C1 et suite EditMode C8, `unity-verify.md`), jamais de PlayMode. Routes `art` et `map` : pas
+de compile gate ni de tests dans les stages de dev.
 
-**Voie de test**, une issue à la fois par projet : le dispatcher lance le `test_flow` de la route
-(`routing.yaml`) quand la voie est libre (`dispatcher.test_slots`, 1). `game-test-code`, `game-test-art`,
+**Voie de test** : le dispatcher lance le `test_flow` de la route (`routing.yaml`) quand l'issue est
+`to-test`. Route `code`, `game-test-code` : **worktree** (`git.worktree`, `git.branch` sur la branche poussée
+par la voie de dev), sans éditeur ni verrou : boucle `unity-test` (headless, batchmode : C1, C8, commentaire
+de PR avec la check-list « À tester à la main en PlayMode ») ⇄ `unity-fix` `report_from: test` (2 tours) →
+`gh.pr_ready` → `aidp:awaiting-merge` → commentaire d'issue → `worktree.remove`, `done`. Pas d'étape humaine
+ni de merge dans le flow : l'humain joue la check-list PlayMode puis merge sur GitHub, le dispatcher passe le
+ticket `done` en voyant la PR mergée. Un flow de test `code` occupe un slot de dev (`dispatcher.slots`), pas
+la voie `test_slots`.
+
+Routes `art` et `map`, une issue à la fois par projet (`dispatcher.test_slots`, 1) : `game-test-art`,
 `game-test-map` : `workspace: project`, **pas de worktree**, toutes les étapes tournent dans le checkout principal
 du projet (l'éditeur Unity de l'utilisateur y est ouvert). `git.checkout` (`checkout`) : checkout propre
 obligatoire, sinon `blocked: dirty-checkout` (label `aidp:blocked`, commentaire d'issue listant les
@@ -200,4 +209,4 @@ Recette : `templates/recipes/memory.md`. Les 15 pipelines `unity-implement`, `un
 
 ## Écarts connus
 
-- `resource: unity-editor` (C3) n'est pas un champ de stage : les flows de test `game-test-*` le tiennent pour tout le run (`workspace: project`).
+- `resource: unity-editor` (C3) n'est pas un champ de stage : les flows de test `game-test-art` et `game-test-map` le tiennent pour tout le run (`workspace: project`) ; `game-test-code` ne le tient plus (headless en worktree).

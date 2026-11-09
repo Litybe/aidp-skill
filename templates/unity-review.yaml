@@ -5,9 +5,11 @@ description: >
   reviewer's job is to PROVE THE ISSUE IS NOT DONE: it assumes the PR is
   incomplete until each acceptance criterion `CA-n` has its own proof (file
   and line, test name, measured value). Then it reads the code against the
-  unity-csharp-dev rules and the Unity pitfalls. Read only and without Unity:
-  the Editor serves another issue meanwhile, so what only Play Mode can show
-  is left to `unity-test` (status 🧪, never a finding).
+  unity-csharp-dev rules and the Unity pitfalls. Read only and without Unity.
+  What only Play Mode can show is tested by the human before the merge, from
+  the « Test manuel en PlayMode » section of the PR body: a criterion in that
+  case is 🧪 (never a finding) as long as the section gives it a T-n; a
+  missing or vague T-n is a finding.
   prepare → review → verdict.
 
   Publishes ONE GitHub review on the PR (inline comments ranked by severity)
@@ -75,7 +77,7 @@ stages:
     policy:
       - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Never edit, commit or push a file of the repository; never switch branch; no git command that changes the checkout (another stage may use it): read the PR at its head sha through `rtk gh pr diff` and `rtk gh api repos/<repo>/contents/<path>?ref=<head_sha>`, saved in your scratch space."
-      - "Do not use Unity: no MCP Unity tool, no batchmode, no computer use. A behaviour only Play Mode can show is 🧪 and goes to `unity-test`."
+      - "Do not use Unity: no MCP Unity tool, no batchmode, no computer use. A behaviour only Play Mode can show is 🧪: it must have its T-n in the « Test manuel en PlayMode » section of the PR body."
       - "The only GitHub write allowed is ONE review (`rtk gh api repos/<repo>/pulls/<pr>/reviews --method POST`), event COMMENT."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"
@@ -95,12 +97,15 @@ stages:
         recomputed. A claim of the PR body without such a proof is not a
         proof. Look for what the PR asserts without proving, edge cases that
         break at run time, missing or unneeded files, a missing .meta, and
-        the PlaytestDriver probes or commands the criterion would need to be
-        testable (probe and scenario contract: templates/recipes/unity-verify.md
-        §3 of the skill, to read only: you run nothing). A criterion with no code is ❌ and a `bloquant` comment. A
-        T-n with no matching test is `majeur`. A manual action the PR needs
-        but does not list is `majeur`. A 🧪 row is not a comment, it lists
-        what `unity-test` must play. (B) The code — full files read at the
+        the « Test manuel en PlayMode » section of the PR body (contract:
+        templates/recipes/unity-verify.md §3 of the skill, to read only: you
+        run nothing). A criterion with no code is ❌ and a `bloquant`
+        comment. A T-n with no matching EditMode test and no manual PlayMode
+        procedure is `majeur`. A 🧪 criterion whose T-n is missing, or does
+        not say the scene, the actions and the expected result, is `majeur`.
+        A manual action the PR needs but does not list is `majeur`. A 🧪
+        row with its T-n is not a comment, it lists what the human must
+        play. (B) The code — full files read at the
         head sha, correctness, Unity lifecycle, the unity-csharp-dev
         review-checklist on the changed lines (layers, VContainer, no magic
         values, LINQ and allocations in Update, ScriptableObject config),

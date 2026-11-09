@@ -1,8 +1,10 @@
-# Personal delivery: from a local ticket to a merged PR, for a GitHub repo with no CI, no Copilot
-# review and no Jira. No `ci` block, so nothing is inserted after a push. Three pipelines:
-# dev-unity (plan, implement, draft PR, playtest in the Unity Editor), review-unity (GitHub
-# review of the whole issue), fix-review-unity (fix the review comments, playtest again).
-# The human merges. Copy this file under another id to deliver another stack.
+# Personal delivery (legacy Desktop route): from a local ticket to a merged PR, for a GitHub repo with
+# no CI, no Copilot review and no Jira. No `ci` block, so nothing is inserted after a push. Three
+# pipelines: dev-unity (plan, implement, draft PR), review-unity (GitHub review of the whole issue),
+# fix-review-unity (fix the review comments). Their in-Editor playtest is off by default: the PlayMode
+# test is manual (templates/recipes/unity-verify.md §3), pass `with: { playtest: true }` to get the
+# legacy computer-use playtest back. The daemon route is game-code + game-test-code (headless
+# batchmode verification). The human merges. Copy this file under another id to deliver another stack.
 id: perso-delivery
 version: 1
 inputs:
@@ -18,7 +20,7 @@ steps:
     kind: action
     use: git.branch
     phase: Preparation
-  # 3. Dev pipeline on the ticket body: plan, code, EditMode tests, draft PR, playtest in the Editor.
+  # 3. Dev pipeline on the ticket body: plan, code, EditMode tests, draft PR (no playtest by default).
   - id: dev
     kind: pipeline
     use: dev-unity
@@ -30,7 +32,7 @@ steps:
     use: review-unity
     phase: Review
     pushes: false
-  # 3c. Fix the review comments, playtest again. The next step marks the PR ready.
+  # 3c. Fix the review comments (no playtest by default). The next step marks the PR ready.
   - id: fix_review
     kind: pipeline
     use: fix-review-unity

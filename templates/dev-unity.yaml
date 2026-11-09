@@ -1,8 +1,12 @@
 version: 5
 id: dev-unity
 description: >
-  Implement a GitHub issue (or a plain-text demand) in a Unity project, then
-  test it for real in the Unity Editor. prepare → plan → implement (draft PR)
+  Legacy Desktop route (the `perso-delivery` flow). The daemon route is
+  `game-code` (`unity-implement`, `unity-review`, `unity-fix`, headless
+  batchmode verification) and the PlayMode test is manual; `playtest` is
+  therefore false by default here. Implement a GitHub issue (or a plain-text
+  demand) in a Unity project, then, when `playtest` is true, test it in the
+  Unity Editor. prepare → plan → implement (draft PR)
   → playtest in the Editor → correction loop (fix the failed scenarios, then
   playtest again, two rounds at most) → report. The PR stays in draft: the
   GitHub review and the review fixes are the next two pipelines,
@@ -29,7 +33,7 @@ inputs:
   issue: { required: false, kind: string, default: "", description: "GitHub issue number to implement. Empty: the demand is `prompt`." }
   prompt: { required: false, kind: string, default: "", description: "Plain-text demand when there is no GitHub issue (a local ticket body when the perso-delivery flow runs it)." }
   feature: { required: false, kind: string, description: "Feature or ticket label; names the vault run folder." }
-  playtest: { required: false, kind: bool, default: true, description: "Test the PR in the Unity Editor after the implementation (Unity MCP + computer use)." }
+  playtest: { required: false, kind: bool, default: false, description: "Off by default since the PlayMode test is manual (templates/recipes/unity-verify.md §3). true: the legacy in-Editor playtest (Unity MCP + computer use) after the implementation." }
   # Kept for the perso-delivery flow, which passes it; this pipeline never marks the PR ready.
   mark_ready: { required: false, kind: bool, default: false, description: "Ignored: the PR is marked ready by fix-review-unity." }
 settings:

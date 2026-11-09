@@ -41,8 +41,9 @@ démarrer le Workflow, et vous relayer les questions.
 
 **Ce que ça vous apporte concrètement :**
 
-- Une issue GitHub implémentée de bout en bout (branche → plan → code → tests EditMode → PR →
-  playtest dans l'éditeur → review → corrections), le merge restant votre décision.
+- Une issue GitHub implémentée de bout en bout (branche → plan → code → compile et tests EditMode
+  en batchmode → PR → review → corrections), le test PlayMode à la main et le merge restant votre
+  décision.
 - Des stages indépendants exécutés **en parallèle** (ex. les 4 dimensions d'une revue).
 - Des sorties **validées par schéma JSON** — pas de parsing fragile de texte libre.
 - Une **reprise native** après chaque gate : le préfixe déjà exécuté est servi depuis le cache,
@@ -164,13 +165,13 @@ périmètre d'écriture.
 
 | id | Cible / inputs clés | À utiliser pour | Gates |
 |---|---|---|---|
-| `dev-unity` | `issue?` + `prompt?` + `feature?` + `playtest?` | Plan → implémentation → PR draft → test dans l'éditeur Unity (MCP Unity + computer use) → corrections du playtest. | — |
-| `review-unity` | `issue?` + `pr?` + `feature?` | Review Unity de la PR : toute l'issue est-elle faite (CA, tests, actions manuelles, preuves de playtest), puis le code. Commentaires inline si corrections, sinon rapport de vérification complet. | — |
-| `fix-review-unity` | `issue?` + `pr?` + `feature?` + `playtest?` + `mark_ready?` | Corrige les commentaires de review ouverts, re-teste dans l'éditeur, passe la PR en ready. `/run-unity-dev-pipeline <issue>` enchaîne les trois. | — |
-| `unity-implement` | `issue?` + `prompt?` + `track?` (`standard` / `bug`) + `feature?` | Route code, sans playtest : prepare → (repro, si `bug`) → plan → implement + tests EditMode + compile gate → report. PR draft `Closes #n`. Sorties `pr`, `branch`, `summary`. | — |
+| `dev-unity` | `issue?` + `prompt?` + `feature?` + `playtest?` | Route Desktop historique : plan → implémentation → PR draft ; le playtest dans l'éditeur (MCP Unity + computer use) ne tourne que si `playtest: true` (défaut `false`, le PlayMode est manuel). | — |
+| `review-unity` | `issue?` + `pr?` + `feature?` | Review Unity de la PR : toute l'issue est-elle faite (CA, tests, actions manuelles), puis le code. Commentaires inline si corrections, sinon rapport de vérification complet. | — |
+| `fix-review-unity` | `issue?` + `pr?` + `feature?` + `playtest?` + `mark_ready?` | Corrige les commentaires de review ouverts, passe la PR en ready (`playtest: false` par défaut). `/run-unity-dev-pipeline <issue>` enchaîne les trois. | — |
+| `unity-implement` | `issue?` + `prompt?` + `track?` (`standard` / `bug`) + `feature?` | Route code, headless : prepare → (repro, si `bug`) → plan → implement + compile gate C1 + suite EditMode C8 en batchmode dans le worktree → report. PR draft `Closes #n` avec la section « Test manuel en PlayMode ». Sorties `pr`, `branch`, `summary`. | — |
 | `unity-review` | `issue?` + `pr?` + `feature?` | Revue avocat du diable : une preuve par `CA-n`, règles `unity-csharp-dev`, lecture seule, sans Unity. Sorties `verdict` (`done` / `need-fix`), `findings`. | — |
-| `unity-fix` | `issue?` + `pr?` + `report_from?` (`review` / `test`) + `feature?` | Corrige les points ❌/⚠️ de la revue ou les scénarios KO du test, compile gate, push, réponse sur chaque fil. Sorties `pr`, `branch`, `summary`. | — |
-| `unity-test` | `issue?` + `pr?` + `feature?` | Compile gate, EditMode + PlayMode, un scénario PlaytestDriver par `CA-n`, preuves en commentaire de PR. Sorties `passed`, `report`. `needs-feel-check` → `blocked: feel-check` ; MCP muet → `blocked: unity-mcp`. | — |
+| `unity-fix` | `issue?` + `pr?` + `report_from?` (`review` / `test`) + `feature?` | Corrige les points ❌/⚠️ de la revue ou les erreurs de compilation et tests EditMode KO du test, compile gate et suite EditMode en batchmode, push, réponse sur chaque fil. Sorties `pr`, `branch`, `summary`. | — |
+| `unity-test` | `issue?` + `pr?` + `feature?` | Vérification headless en batchmode dans le worktree : compile gate C1, suite EditMode C8, commentaire de PR avec la check-list « À tester à la main en PlayMode ». Jamais de PlayMode. Sorties `passed`, `report`. Unity introuvable, autre version, licence, délai → `blocked: unity-<raison>`. | — |
 | `issue-refine` | `issue` + `repo?` + `feature?` | Affine une issue étiquetée `aidp:triage` (sans critères `CA-n`) : réécrit son corps avec le skill `github-issue-ticket`, le publie avec `gh issue edit`, remplace le label `aidp:triage` par `aidp:ready` et commente. Lancé par le bouton « Affiner » d'aidp-studio. | — |
 | `pixelart` | `prompt` + `asset_kind?` + `source?` + `view?` + `size?` + `palette?` + `feature?` | Brief de direction artistique → génération Pixellab → animation → revue notée → retouche → export Unity. `/run-pixelart-pipeline <issue>` construit le `prompt` depuis l'issue. | — |
 | `dev-aidp` | `prompt` + `feature` + `track` | Développe `aidp` lui-même (workspace Rust, schémas, docs), selon l'`AGENTS.md` du dépôt. La demande est toujours en texte libre. **Plan-driven.** | — |

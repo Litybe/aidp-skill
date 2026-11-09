@@ -19,9 +19,11 @@ driver: all real work happens inside the Workflow sub-agents.
 2. The current directory must be the Unity project (it holds `Assets/` and `ProjectSettings/`).
    Otherwise stop and say so.
 3. `rtk aidp vault status --format json-compact` once: warn if no vault is configured, then go on.
-4. Tell the user in one line: the playtest stages drive the Unity Editor through the Unity MCP and,
-   for real input in the Game view, through computer use — the first playtest will ask them to grant
-   access to the Unity Editor; refusing only skips the scenarios that need it.
+4. Tell the user in one line: the PlayMode test is manual (the PR body section « Test manuel en
+   PlayMode »), so the playtest stages are skipped by default (`playtest: false`). Only when the user
+   asks for `playtest: true`: the legacy playtest drives the Unity Editor through the Unity MCP and,
+   for real input in the Game view, through computer use — it will ask them to grant access to the
+   Unity Editor; refusing only skips the scenarios that need it.
 
 Every run uses the same inputs `--input issue=<n> --input feature=issue-<n>` and `--target issue-<n>`,
 so the three runs land in the same vault feature folder.

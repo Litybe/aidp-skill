@@ -1,7 +1,8 @@
 version: 5
 id: fix-review-unity
 description: >
-  Fix the open review comments of the PR of a Unity project — the ones of
+  Legacy Desktop route (the `perso-delivery` flow); the daemon route is
+  `game-code` with `unity-fix`. Fix the open review comments of the PR of a Unity project — the ones of
   unity-pr-reviewer as well as a human's: fix, compile, push, reply on each
   thread and resolve the fixed ones, then test the PR again in the Unity
   Editor, and mark the PR ready when nothing blocking is left. Nothing to
@@ -17,7 +18,7 @@ inputs:
   issue: { required: false, kind: string, default: "", description: "GitHub issue number; the PR linked to it is fixed." }
   pr: { required: false, kind: string, default: "", description: "PR number. Empty: the PR linked to `issue`, else the open PR of the current branch." }
   feature: { required: false, kind: string, description: "Feature or ticket label; names the vault run folder." }
-  playtest: { required: false, kind: bool, default: true, description: "Test the PR again in the Unity Editor after the fixes." }
+  playtest: { required: false, kind: bool, default: false, description: "Off by default since the PlayMode test is manual (templates/recipes/unity-verify.md §3). true: the legacy in-Editor playtest after the fixes." }
   mark_ready: { required: false, kind: bool, default: true, description: "Mark the PR ready for review at the end when pr.markReadyWhenDone holds, the last verification passed and no blocking thread is left open." }
 settings:
   knowledge_graph:

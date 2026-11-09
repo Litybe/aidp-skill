@@ -1,0 +1,133 @@
+version: 5
+id: map-headless
+description: >
+  Gamedev route `map`, test step WITHOUT the Unity Editor (replaces map-test for the
+  `game-test-map` flow, which runs in a worktree). Proves from the files of the PR and the
+  CA-n criteria of the issue that the LDtk map is valid and meets the design rules: the
+  .ldtk is valid JSON and coherent (`ldtk.py validate`), the world graph is solvable
+  (`validate_graph.py`, skill map-world-design), each touched room passes its metrics
+  (`room_metrics.py`, skill map-room-design), the project lint of the map when it exists
+  (Docs/MapDesign/tools), and each touched room gets a PNG render to look at.
+  A criterion that only a scene import or a Play Mode crossing can check is « reporté »
+  (deferred): it never fails the test.
+
+  No Unity: neither the Editor nor its MCP is started, no compile gate, no PlaytestDriver
+  scenario. The .ldtk is never edited. The .meta files that the worktree dev lane could not
+  create (scripts/unity_meta.py: copy of a real .meta of the base branch, new GUID) are
+  COMMITTED AND PUSHED on the branch of the PR; a .meta already there is only checked.
+
+  Outputs read by the flow (contract C4): result.json {passed, report} and the Markdown
+  report report.md, with the PNG renders, in the stage dir.
+inputs:
+  issue: { required: false, kind: string, default: "", description: "GitHub issue number; its linked PR holds the map." }
+  pr: { required: false, kind: string, default: "", description: "PR number. Empty: the PR linked to `issue`, else the open PR of the current branch." }
+  ldtk_file: { required: false, kind: string, default: "Assets/MAP_LDTK/Map1.ldtk", description: "LDtk file under test." }
+  graph_file: { required: false, kind: string, default: "Docs/MapDesign/world_graph.json", description: "World graph of the map." }
+  feature: { required: false, kind: string, description: "Ticket label; names the vault run folder." }
+settings:
+  knowledge_graph:
+    enabled: false
+stages:
+  - name: prepare
+    agent: executor
+    model: haiku
+    scope: { mode: repo_wide }
+    policy:
+      - "Never ask the user a question. Decide open points yourself and record them as assumptions."
+      - "No Unity, no Unity MCP. Allowed writes: `git fetch` and `git merge --ff-only` of the PR branch, and the stage dir. No commit, no push, no GitHub write."
+    inputs:
+      issue: "{{ inputs.issue }}"
+      pr: "{{ inputs.pr }}"
+      ldtk_file: "{{ inputs.ldtk_file }}"
+      graph_file: "{{ inputs.graph_file }}"
+    with:
+      instructions: >
+        (1) The working directory is a worktree of the project (Assets/ present). The PR
+        (`pr`, else the one linked to `issue`, else the open PR of the current branch; none:
+        blocked) and its files (`rtk gh pr view <pr> --json number,files,headRefName,baseRefName`).
+        (2) Sync the branch: the flow worktree may have been created from the base branch, not
+        from the pushed PR branch. `rtk git fetch origin <headRefName>`, then `rtk git merge
+        --ff-only origin/<headRefName>`; not fast-forwardable: blocked "branch-diverged". HEAD
+        must end equal to origin/<headRefName>. (3) The criteria CA-n of the issue (`rtk gh issue
+        view`): number, text, rooms concerned. (4) Rooms touched: the level names that differ
+        between the base .ldtk and the working copy (`git show origin/<base>:<ldtk_file>` into the
+        stage dir, then `python C:/Users/Litybe/.claude/skills/ldtk/scripts/ldtk.py --file <f>
+        summary` on both). (5) Does `graph_file` exist, and Docs/MapDesign/tools/*.py (project
+        lint such as r1lint.py). Write context.json: pr, issue, branch, base, head_sha, criteria
+        [{id, text, rooms}], rooms (touched, with the role from the graph when known), graph_file
+        (path or null), project_lints (paths). Memory (contract C10, templates/recipes/memory.md
+        of the skill): with the issue number, run `rtk aidp memory context --project
+        "<projectRoot>" --issue GH-<issue> --route map --stage test --budget 2000` and save its
+        output as memory-context.md in your stage dir, unchanged; if the command fails, write
+        memory-context.md holding only « Mémoire indisponible : <cause> » and go on.
+    outputs: [context.json, memory-context.md]
+
+  - name: test
+    agent: executor
+    model: sonnet
+    needs: [prepare]
+    scope: { mode: repo_wide }
+    policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report."
+      - "Never ask the user a question. Headless: never start the Unity Editor, never call the Unity MCP (mcp__unity-mcp__*), no computer use, no PlaytestDriver scenario."
+      - "Never edit the .ldtk, a scene, a prefab or a script; ldtk.py is used for validate, summary, show and render only (no paint, new-room, entity add...). Never weaken a criterion to make it pass."
+      - "Read the skills' scripts before running them: ~/.claude/skills/ldtk, map-world-design (validate_graph.py), map-room-design (room_metrics.py). Their FAIL lines are findings; WARN lines are notes."
+      - "A criterion only Unity can verify (scene import, Play Mode crossing, camera) is `deferred` with its reason; it never fails. Never invent a result."
+      - "Commit and push only the .meta files created by unity_meta.py, by name (never `git add -A`), on the PR branch, never with force. A refused push is `failed`."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      memory: "{{ stages.prepare.outputs.memory-context }}"
+      ldtk_file: "{{ inputs.ldtk_file }}"
+      task: >
+        Skip with blocked and the reason when `context` is blocked. S=C:/Users/Litybe/.claude/skills.
+        (1) The .ldtk is valid JSON (`python -c "import json;json.load(open(...))"`) then
+        `python $S/ldtk/scripts/ldtk.py --file <ldtk_file> validate`: any error is a finding
+        blocking. (2) World graph (when `context.graph_file`): `python
+        $S/map-world-design/scripts/validate_graph.py <graph_file> --ldtk <ldtk_file>`; exit 1 is
+        a finding major (solvability, locks, orphan rooms). (3) Per touched room: `python
+        $S/map-room-design/scripts/room_metrics.py --file <ldtk_file> --level <room> [--role
+        <role>] --graph <graph_file>`; each FAIL is a finding major, each WARN a note; plus the
+        project lints of `context.project_lints` when their usage says they take the .ldtk and
+        rooms (r1lint.py <ldtk> <rooms>). (4) Renders: `python $S/ldtk/scripts/ldtk.py --file
+        <ldtk_file> render <room> --grid --out <stage dir>/<room>.png` and `show <room>` (ASCII);
+        look at each PNG (Read) and note the visible defects (flat or empty room, missing
+        entities, door without opening, hole in the ceiling). (5) Each CA-n gets a verdict: ok,
+        ko (measured vs expected), deferred (needs Unity, say what), minor. (6) The .meta: from
+        the worktree root run `python D:/AIDP/skill/scripts/unity_meta.py --repo . --base
+        origin/<base>`; it creates the missing .meta of the files added by the PR and only checks
+        the existing ones; copy its JSON as meta.json. `errors` not empty: finding major. Then
+        `rtk git status --porcelain`: stage the created .meta by name, commit them
+        (`chore(map): .meta générés sans éditeur (#<issue>)`, French), `rtk git push`; metaCommit
+        {sha, files} or null. Write test.json: json {valid, errors}, graph {exit, fails, warns},
+        rooms [{id, metrics_exit, fails, warns, render, defects}], criteria [{id, verdict, expected,
+        actual, note}], meta {created, checked, errors}, metaCommit, deferred [{id, reason}],
+        findings [{severity, text}].
+    outputs: [test.json, meta.json]
+
+  - name: report
+    agent: executor
+    model: haiku
+    needs: [test]
+    scope: { mode: stage_dir_only }
+    policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report."
+      - "Memory proposals: write memory-proposals.json (`{\"proposals\": []}` when nothing qualifies), 5 max, non-obvious reusable lessons only, as templates/recipes/memory.md §3 says."
+      - "No GitHub write, no commit, no push."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      memory: "{{ stages.prepare.outputs.memory-context }}"
+      test: "{{ stages.test.outputs.test }}"
+      meta: "{{ stages.test.outputs.meta }}"
+    with:
+      instructions: >
+        Write result.json: {"passed": <true only when the .ldtk is valid, the graph passes, no
+        room has a FAIL, no criterion is ko, unity_meta.py had no error and the push (if any)
+        worked; deferred items and WARN notes never fail>, "pr": <n>, "rooms": <n>, "failed":
+        [<short reasons>], "deferred": [<ids>], "report": "report.md", "blocked": <reason or
+        null>} (contract C9, flat object; mirror passed and report as signals of the reply
+        envelope; status blocked: the reason goes in signals.blocked_reason). Write report.md:
+        state at the top that the test ran without Unity; JSON validity, graph result, a table
+        per room (metrics FAIL / WARN, render file, defects), a table per criterion (id, verdict,
+        expected, actual), the .meta created or checked and the metaCommit, the deferred items
+        with « reporté, nécessite Unity ».
+    outputs: [result.json, report.md, memory-proposals.json]

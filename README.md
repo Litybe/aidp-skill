@@ -134,8 +134,8 @@ fragilités d'origine : voir le plan de conception.)
 | `unity-fix` | corrige les points ❌/⚠️ de la revue (`report_from: review`) ou les scénarios KO (`report_from: test`), compile gate C1, push, réponse sur chaque fil |
 | `unity-test` | compile gate C1, EditMode + PlayMode, un scénario PlaytestDriver par `CA-n`, preuves dans la PR, `passed` ; `needs-feel-check` → `blocked: feel-check` |
 | `pixelart` | brief, génération Pixellab, animation, revue notée, retouche, export Unity |
-| `art-produce`, `art-review`, `art-import` | route art : production (brief, Pixellab 10 générations max, animation, correction, PR draft), revue avocat du diable, import Unity |
-| `map-produce`, `map-review`, `map-test` | route map : graphe validé, salles LDtk, métriques et rendus, PR draft ; revue (solvabilité, sauts, BIBLE) ; test d'import et de traversée en Unity |
+| `art-produce`, `art-review`, `art-import`, `art-headless` | route art : production (brief, Pixellab 10 générations max, animation, correction, PR draft), revue avocat du diable, test sans éditeur (`art-headless`, utilisé par `game-test-art`) ; `art-import` : ancien test éditeur |
+| `map-produce`, `map-review`, `map-test`, `map-headless` | route map : graphe validé, salles LDtk, métriques et rendus, PR draft ; revue (solvabilité, sauts, BIBLE) ; test sans éditeur (`map-headless`, utilisé par `game-test-map`) ; `map-test` : ancien test d'import et de traversée en Unity |
 | `art-fix`, `map-fix`, `doc-fix` | corrigent la PR après une revue (`report_from: review`) ou un test (`test`, art et map), push, `result.json` `{pr, branch, summary, pushed}` |
 | `doc-write`, `doc-review` | route doc : BIBLE et `Docs/` cohérents avec le canon, revue (détail : `docs/gamedev-content-pipelines.md`) |
 | `dev-aidp` | fait évoluer `aidp` lui-même (workspace Rust, règles de son `AGENTS.md`) |

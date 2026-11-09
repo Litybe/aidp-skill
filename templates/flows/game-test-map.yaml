@@ -1,57 +1,39 @@
-# Game map test lane: the Unity test of an issue whose development ended (phase `to-test`), then the merge.
+# Game map test lane: the headless test of an issue whose development ended (phase `to-test`), then the merge.
 # Started by the dispatcher (never by hand, except through POST /api/tickets/:key/start) as the `test_flow` of the route,
 # when the test lane of the project is free: `dispatcher.test_slots` (1) test flows at a time per project.
-# map-test <-> map-fix loop (`report_from: test`), PR ready, human merge. Labels `aidp:*` are set by gh.issue_label, every
+# map-headless <-> map-fix loop (`report_from: test`), PR ready, human merge. Labels `aidp:*` are set by gh.issue_label, every
 # test is commented on the issue (gh.issue_comment). A loop that runs out of rounds sets `blocked` and ends the run `escalated`
 # (`fail` with kind business). Loop `max` is a literal (the schema wants a u32); keep it equal to settings.max_test_rounds.
-# Workspace: `workspace: project`. No worktree: every step runs in the MAIN checkout of the project (where the Unity Editor
-# is open). `git.checkout` is the first step: it needs a clean checkout (else `blocked: dirty-checkout`, label aidp:blocked,
-# comment listing the files, run escalated), then switches to the issue branch (the one the dev flow pushed). `unity.refresh`
-# then runs one compile gate of the open editor so the reimport of the branch ends before the test stage. The run holds the
-# project's `unity-editor` resource (one test flow at a time) from that step until `git.restore` (before the merge approval)
-# gives the checkout back to the base branch; the daemon also restores when the run ends escalated, failed or cancelled.
+# Workspace: the default one, a worktree per ticket, like the dev lane. NO Unity Editor, NO `unity-editor` resource, no
+# `git.checkout` / `unity.refresh` / `git.restore`: the test is headless (checks on the files of the PR, no Unity), so the main
+# checkout of the project stays free. Decision: art / map / doc tickets need no Unity Editor test; the Editor tests stay for
+# the issues that change code (game-test-code).
+# `git.worktree` then `git.branch` take the issue branch the dev flow pushed. CAUTION: `worktree.remove` of the dev flow deletes
+# the local branch `feat/GH-<n>`, so `git.worktree` creates it again from the default branch and `git.branch` finds it local
+# (no switch to origin). The first stage of map-headless therefore runs `git fetch` + `git merge --ff-only origin/<branch>`
+# (blocked `branch-diverged` otherwise) before testing. The test commits and pushes the `.meta` files it creates
+# (scripts/unity_meta.py), hence `pushes: true`; `worktree.remove` at the end saves any unpushed work and removes the worktree.
 id: game-test-map
 version: 1
 inputs:
   ticket: { required: true }
 settings:
   max_test_rounds: 2
-workspace: project
 steps:
-  - { id: checkout, kind: action, use: git.checkout, phase: Préparation }
-  - { id: checkout_label, kind: action, use: gh.issue_label, with: { state: blocked }, phase: Préparation, when: "steps.checkout.outputs.blocked == true" }
-  - id: checkout_comment
-    kind: action
-    use: gh.issue_comment
-    phase: Préparation
-    with: { body: "{{ steps.checkout.outputs.message }}" }
-    when: "steps.checkout.outputs.blocked == true"
-    on_error: warn
-  - { id: checkout_stop, kind: action, use: fail, phase: Préparation, with: { kind: business, message: "blocked: dirty-checkout" }, when: "steps.checkout.outputs.blocked == true" }
-  # The editor reimports and recompiles the new branch under control (one compile gate C1) before the test stage: compile errors
-  # are not a stop here (the test stage reports them), a silent editor is (`blocked: unity-editor`, with its last heartbeat).
-  - { id: refresh, kind: action, use: unity.refresh, phase: Préparation }
-  - { id: refresh_label, kind: action, use: gh.issue_label, with: { state: blocked }, phase: Préparation, when: "steps.refresh.outputs.blocked == true" }
-  - id: refresh_comment
-    kind: action
-    use: gh.issue_comment
-    phase: Préparation
-    with: { body: "{{ steps.refresh.outputs.message }}" }
-    when: "steps.refresh.outputs.blocked == true"
-    on_error: warn
-  - { id: refresh_stop, kind: action, use: fail, phase: Préparation, with: { kind: business, message: "blocked: unity-editor" }, when: "steps.refresh.outputs.blocked == true" }
+  - { id: worktree, kind: action, use: git.worktree, phase: Préparation }
+  - { id: branch, kind: action, use: git.branch, phase: Préparation }
   - id: test_loop
     kind: loop
-    phase: Test Unity
+    phase: Test
     max: 2
     until: "steps.test.outputs.passed == true || !(steps.test_loop.iteration < settings.max_test_rounds)"
     body:
       - { id: test_label, kind: action, use: gh.issue_label, with: { state: testing } }
-      - { id: test, kind: pipeline, use: map-test, pushes: true }
+      - { id: test, kind: pipeline, use: map-headless, pushes: true }
       - id: test_comment
         kind: action
         use: gh.issue_comment
-        with: { body: "Test map-test : passed={{ steps.test.outputs.passed }}", cost_footer: true }
+        with: { body: "Test map-headless : passed={{ steps.test.outputs.passed }}", cost_footer: true }
         on_error: warn
       - id: fix_test
         kind: pipeline
@@ -59,11 +41,11 @@ steps:
         pushes: true
         when: "steps.test.outputs.passed == false"
         with: { report_from: test }
-  - { id: test_exhausted, kind: action, use: gh.issue_label, with: { state: blocked }, phase: Test Unity, when: "steps.test.outputs.passed != true" }
-  - { id: test_escalate, kind: action, use: fail, phase: Test Unity, with: { kind: business, message: "Test épuisé : issue bloquée" }, when: "steps.test.outputs.passed != true" }
+  - { id: test_exhausted, kind: action, use: gh.issue_label, with: { state: blocked }, phase: Test, when: "steps.test.outputs.passed != true" }
+  - { id: test_escalate, kind: action, use: fail, phase: Test, with: { kind: business, message: "Test épuisé : issue bloquée" }, when: "steps.test.outputs.passed != true" }
   - { id: ready, kind: action, use: gh.pr_ready, phase: Merge }
   - { id: await, kind: action, use: gh.issue_label, with: { state: awaiting-merge }, phase: Merge }
-  - { id: restore, kind: action, use: git.restore, phase: Merge }
   - { id: merge_approval, kind: human, phase: Merge, prompt: "Merger la PR ?", choices: [approve] }
   - { id: merge, kind: action, use: gh.merge, phase: Merge }
   - { id: done, kind: action, use: gh.issue_label, with: { state: done }, phase: Merge }
+  - { id: clean, kind: action, use: worktree.remove, phase: Nettoyage, on_error: warn }

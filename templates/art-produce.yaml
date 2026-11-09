@@ -299,7 +299,7 @@ stages:
       - "Never ask the user a question. No Pixellab call. Never merge, never mark the PR ready."
       - "Reply status completed as soon as the PR exists: findings left open and the Unity checks still to do go in the PR body, they are never a reason for needs_review or blocked."
       - "Commit only the asset files (.aseprite, exported sheet / PNG / JSON, previews) on the working branch; never the base branch. No .meta (the Unity Editor makes them at the test step)."
-      - "No Unity .meta in a worktree (no Editor): never write or fake one (guid, PPU, filter, compression, spriteBorder, pivot). art-import creates them at the test step."
+      - "No Unity .meta in a worktree (no Editor): never write or fake one (guid, PPU, filter, compression, spriteBorder, pivot). the test step (art-headless, scripts/unity_meta.py) creates them."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"
       memory: "{{ stages.prepare.outputs.memory-context }}"

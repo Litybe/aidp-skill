@@ -161,8 +161,8 @@ et dit dans un commentaire d'issue) → `merge_approval` humain → `gh.merge` �
 | Voie de dev | Produire | Revue ⇄ correction | Fin | Voie de test (`test_flow`) | Test ⇄ correction |
 |---|---|---|---|---|---|
 | `game-code` | `unity-implement` | `unity-review` ⇄ `unity-fix` | `to-test` | `game-test-code` | `unity-test` ⇄ `unity-fix` |
-| `game-art` | `art-produce` | `art-review` ⇄ `art-fix` | `to-test` | `game-test-art` | `art-import` ⇄ `art-fix` (+ `.meta` commités) |
-| `game-map` | `map-produce` | `map-review` ⇄ `map-fix` | `to-test` | `game-test-map` | `map-test` ⇄ `map-fix` |
+| `game-art` | `art-produce` | `art-review` ⇄ `art-fix` | `to-test` | `game-test-art` | `art-headless` ⇄ `art-fix` (sans éditeur, `.meta` créés par `scripts/unity_meta.py` et commités) |
+| `game-map` | `map-produce` | `map-review` ⇄ `map-fix` | `to-test` | `game-test-map` | `map-headless` ⇄ `map-fix` (sans éditeur) |
 | `game-doc` | `doc-write` | `doc-review` ⇄ `doc-fix` | merge | aucun | aucun |
 
 Boucle épuisée : l'`until` de chaque boucle s'arrête aussi à `settings.max_*_rounds` (une boucle arrêtée par `max` seul escalade le run aussitôt et rien ne s'exécute après), puis label `aidp:blocked` et `fail` avec `kind: business` : le run finit `escalated` (sans `kind`, `failed`). Le dernier tour `need-fix` est corrigé mais pas re-revu : issue bloquée, un humain regarde. Le daemon passe `issue`, `track` et `route` aux pipelines (ticket GitHub) : aucun `with: { issue }` dans les flows. Le verrou (C3) est tenu par le run (`workspace: project`), jamais par le template. Les labels sont

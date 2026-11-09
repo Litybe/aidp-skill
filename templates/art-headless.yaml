@@ -1,0 +1,129 @@
+version: 5
+id: art-headless
+description: >
+  Gamedev route `art`, test step WITHOUT the Unity Editor (replaces art-import for the
+  `game-test-art` flow, which runs in a worktree). Proves from the files of the PR and the
+  CA-n criteria of the issue that the pixel art asset is delivered right: PNG and .aseprite
+  present, size, frames, tags, alpha, colors, Aseprite MCP lint and unity_validate, and
+  fidelity to the Pixellab render (scripts/pixellab_fidelity.py) when the render exists in
+  the `art-produce` run of the issue. Project rule: the Pixellab render is the deliverable;
+  a criterion that wants exact pixels, a grid or a hand drawing is at most minor.
+  A criterion that only Unity can check (import in a scene, Play Mode, animation clip played)
+  is « reporté » (deferred): it never fails the test.
+
+  No Unity: neither the Editor nor its MCP is started, no compile gate. The .meta files that
+  the worktree dev lane could not create are made by scripts/unity_meta.py (copy of a real
+  .meta of the base branch, new GUID, project import settings) and COMMITTED AND PUSHED on the
+  branch of the PR, as art-import did. A .meta already there is only checked.
+
+  Outputs read by the flow (contract C4): result.json {passed, report} and the Markdown
+  report report.md, in the stage dir.
+inputs:
+  issue: { required: false, kind: string, default: "", description: "GitHub issue number; its linked PR holds the asset." }
+  pr: { required: false, kind: string, default: "", description: "PR number. Empty: the PR linked to `issue`, else the open PR of the current branch." }
+  feature: { required: false, kind: string, description: "Ticket label; names the vault run folder." }
+settings:
+  knowledge_graph:
+    enabled: false
+stages:
+  - name: prepare
+    agent: executor
+    model: haiku
+    scope: { mode: repo_wide }
+    policy:
+      - "Never ask the user a question. Decide open points yourself and record them as assumptions."
+      - "No Unity, no Unity MCP. Allowed writes: `git fetch` and `git merge --ff-only` of the PR branch, and the stage dir. No commit, no push, no GitHub write."
+    inputs:
+      issue: "{{ inputs.issue }}"
+      pr: "{{ inputs.pr }}"
+    with:
+      instructions: >
+        (1) The working directory is a worktree of the project (Assets/ present). The PR
+        (`pr`, else the one linked to `issue`, else the open PR of the current branch; none:
+        blocked) and its files (`rtk gh pr view <pr> --json number,files,headRefName,baseRefName`).
+        (2) Sync the branch: the flow worktree may have been created from the base branch, not
+        from the pushed PR branch. `rtk git fetch origin <headRefName>`, then `rtk git merge
+        --ff-only origin/<headRefName>`; not fast-forwardable: blocked "branch-diverged". HEAD
+        must end equal to origin/<headRefName>. (3) From the issue (`rtk gh issue view`): the
+        criteria CA-n (number, text) and the asset requirements (names, size, frames, tags, ms,
+        palette, import: sprite mode and pivot). (3b) The `deferred` list of the latest review (« Revue avocat du diable » PR comment or findings.json of the review run), copied into context.json; the Unity import values it names are those unity_meta.py imposes, the rest stays deferred. (4) The assets of the PR: .png / .aseprite
+        under Assets/ (added or changed), and the files without a .meta. (5) The Pixellab
+        render: newest run folder (by mtime) of D:\AIDP\Vault\Pipelines\PixelHood\GH-<issue>\
+        that holds generate_pixellab\pixellab.png (else generate\); list each png found as
+        `renders` with its path, none: empty list. Write context.json: pr, issue, branch, base,
+        head_sha, criteria [{id, text}], assets [{png, aseprite, meta, expected}], renders, import
+        {spriteMode, pivot} (null when the issue does not say). Memory (contract C10,
+        templates/recipes/memory.md of the skill): with the issue number, run `rtk aidp memory context
+        --project "<projectRoot>" --issue GH-<issue> --route art --stage test --budget 2000` and
+        save its output as memory-context.md in your stage dir, unchanged; if the command fails,
+        write memory-context.md holding only « Mémoire indisponible : <cause> » and go on.
+    outputs: [context.json, memory-context.md]
+
+  - name: test
+    agent: executor
+    model: sonnet
+    needs: [prepare]
+    scope: { mode: repo_wide }
+    policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report."
+      - "Never ask the user a question. Headless: never start the Unity Editor, never call the Unity MCP (mcp__unity-mcp__*), no computer use. The Aseprite MCP is allowed."
+      - "Read-only on the assets: never edit a .png or .aseprite, never weaken a criterion to make it pass. Only the .meta files made by scripts/unity_meta.py may be written."
+      - "Project rule: the Pixellab render is the deliverable. A criterion that imposes exact pixels, a grid or hand drawing is at most minor (a note), never a failure by itself."
+      - "A criterion only Unity can verify (scene, Play Mode, clip played, import result) is `deferred` with its reason; it never fails. Never invent a result."
+      - "Commit and push only the .meta files created by unity_meta.py, by name (never `git add -A`), on the PR branch, never with force. A refused push is `failed`."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      memory: "{{ stages.prepare.outputs.memory-context }}"
+      task: >
+        Skip with blocked and the reason when `context` is blocked. (1) For each asset: the PNG
+        and the .aseprite both exist (one without the other fails unless the issue says so);
+        PNG size, frame count and tags (Aseprite MCP sprite_inspect / tag_list, or Pillow for
+        the PNG: size, alpha channel, number of colors, fully transparent border); lint, then
+        unity_validate (Aseprite MCP, project profile); colors against the project palette
+        (palette_get). Compare each measure with the issue requirements. (2) Fidelity: for
+        every asset with a render in `context.renders` run `python
+        D:/AIDP/skill/scripts/pixellab_fidelity.py --base <render> --final <png>`; exit 1 (too
+        modified) is a finding of weight major, exit 2 (not comparable) a note; no render: note
+        « sans rendu Pixellab ». (3) Each CA-n gets a verdict: ok, ko (with measured vs
+        expected), deferred (needs Unity, say what), minor (note only). The .meta files are not
+        a CA-n of the art itself. (4) The .meta: from the worktree root run `python
+        D:/AIDP/skill/scripts/unity_meta.py --repo . --base origin/<base> --sprite-mode <spriteMode>
+        --pivot <x,y>` with the values of `context.import` (omit a flag when null: the model's
+        value stays; give --slice WxH when the issue asks for a multiple-mode sheet). It creates
+        the missing .meta (PNG, .aseprite, new folders) and only checks the existing ones; copy
+        its JSON as meta.json. Existing .meta with `issues` are findings (never rewritten here).
+        `errors` not empty: finding major. (5) `rtk git status --porcelain`: stage the created
+        .meta files by name, commit them (`chore(art): .meta générés sans éditeur (#<issue>)`,
+        French) and `rtk git push`. Record {sha, files} as metaCommit, null when none. Write
+        test.json: assets [{path, size, frames, tags, alpha, colors, lint, unity_validate,
+        fidelity}], criteria [{id, verdict, expected, actual, note}], meta {created, checked,
+        errors}, metaCommit, deferred [{id, reason}], findings [{severity, text}].
+    outputs: [test.json, meta.json]
+
+  - name: report
+    agent: executor
+    model: haiku
+    needs: [test]
+    scope: { mode: stage_dir_only }
+    policy:
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report."
+      - "Memory proposals: write memory-proposals.json (`{\"proposals\": []}` when nothing qualifies), 5 max, non-obvious reusable lessons only, as templates/recipes/memory.md §3 says."
+      - "No GitHub write, no commit, no push."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      memory: "{{ stages.prepare.outputs.memory-context }}"
+      test: "{{ stages.test.outputs.test }}"
+      meta: "{{ stages.test.outputs.meta }}"
+    with:
+      instructions: >
+        Write result.json: {"passed": <true only when no criterion is ko, no finding of weight
+        blocking or major remains, unity_meta.py had no error and the push (if any) worked;
+        deferred and minor items never fail>, "pr": <n>, "failed": [<short reasons, one per ko
+        criterion or major finding>], "deferred": [<ids>], "report": "report.md", "blocked":
+        <reason or null>} (contract C9, flat object; mirror passed and report as signals of the
+        reply envelope; status blocked: the reason goes in signals.blocked_reason). Write
+        report.md: a table per criterion (id, verdict, expected, actual), the asset
+        measures, the Pixellab fidelity, the .meta created or checked and the metaCommit, the
+        deferred items with their reason « reporté, nécessite Unity », the findings. State
+        at the top that the test ran without Unity.
+    outputs: [result.json, report.md, memory-proposals.json]

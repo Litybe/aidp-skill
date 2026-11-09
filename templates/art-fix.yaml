@@ -20,6 +20,7 @@ inputs:
   base_branch: { required: false, kind: string, default: "", description: "Branch the ticket starts from and its PR targets, when it is not the default one (a bug ticket: its parent's branch). Empty: the default branch." }
   feature: { required: false, kind: string, description: "Feature or ticket label; names the vault run folder." }
 settings:
+  max_stage_retries: 1
   knowledge_graph:
     enabled: false
 stages:
@@ -67,10 +68,10 @@ stages:
       - "Minor touch-ups only on the Pixellab render, with the Aseprite MCP: off-palette or near-duplicate colours (color_remap), stray pixels, partial alpha, format, tags, durations. Never redraw, draw_grid, repaint a volume or the silhouette, replace the render, rescale, blur or filter."
       - "An item asking for more than a minor touch-up: skip it, with regenerate_recommendation in fix.json."
       - "Before editing, copy the PR's PNG to baseline.png in your stage dir. After your edits run `python D:/AIDP/skill/scripts/pixellab_fidelity.py --base <baseline.png> --final <exported PNG>`. Exit code 1: too much changed: restore the PNG and redo only the colour fixes."
-      - "Allowed Pixellab calls: free ones (pixelart_workbench, save_to_asset, get_*) and 0.1-generation cleanups within what is left of the 10 generations per issue. No new generation. Lack of generations or a balance under the reserve: blocked."
-      - "Write pixellab-usage.json (C6) in your stage dir when you call Pixellab: balanceBefore and balanceAfter (raw get_balance answers), generations (spent by this stage, 0 if none), jobs, recordedAt."
-      - "No Unity: never open the Unity Editor or its MCP. Never weaken a criterion, a test or a scenario to make it pass."
-      - "No Unity .meta in a worktree (no Editor): never write or fake one. the test step (art-headless, unity_meta.py) creates them. An item that only asks for a .meta or a Unity import value is not yours: skip it, write « reporté au test Unity » in fix.json."
+      - "Allowed Pixellab calls: free ones (pixelart_workbench, save_to_asset, get_*) and 0.1-generation cleanups within what is left of the 10 generations per issue. No new generation. Lack of generations or a balance under the reserve: skip the cleanup and say so, the item stays open."
+      - "pixellab-usage.json (C6) when you call Pixellab: balanceBefore/After (raw get_balance), generations, jobs, recordedAt. No Unity .meta in a worktree: never write or fake one; an item that only asks for a .meta or import value is skipped, « reporté au test Unity »."
+      - "An item you cannot fix is an open item, listed under « Reste manuel »: reply completed, never needs_review or blocked. Only a missing PR or a dirty tree is blocked."
+      - "Tool outage (MCP silent, connection refused, timeout, Pixellab 5xx, rate limit) is no art verdict: reply failed with signals.tool_unavailable true, never needs_review or blocked. The engine resumes it. No Unity Editor or MCP; never weaken a criterion, test or scenario to pass."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"
       memory: "{{ stages.prepare.outputs.memory-context }}"
@@ -84,7 +85,7 @@ stages:
         commit per subject), push on the PR's branch (never force), reply on
         EACH review thread with what you did and the commit, resolve the
         fixed ones, leave a thread open with the reason when you did not fix
-        it (wontfix with evidence, or blocked). Post ONE PR comment marked
+        it (wontfix with evidence, or left open with the reason). Post ONE PR comment marked
         `art-fix-summary` (round `context.fix_round`): the table item /
         status (✅ fixed, ⏸️ left) / evidence (commit, file, measure), then
         « Reste manuel ». Write fix.json: {"pushed", "commits", "items": [{id,

@@ -6,9 +6,9 @@
 # Workspace: the default one, a worktree per ticket (several dev flows run in parallel, up to `dispatcher.slots`). No Unity
 # editor is open on a worktree: the stages do not run the compile gate nor the tests (`verification.compile = "deferred"`).
 # Labels `aidp:*` are set by gh.issue_label, every review is commented on the issue (gh.issue_comment). A loop that runs out
-# of rounds sets `blocked` and ends the run `escalated` (`fail` with kind business). Loop `max` is a literal (the schema wants
+# of rounds never blocks nor fails the run: the remaining findings stay open, commented on the issue (art dead-end rule). Loop `max` is a literal (the schema wants
 # a u32); keep it equal to settings.max_review_rounds. `until` also stops the loop on settings.max_review_rounds so that the
-# blocked label and the business `fail` run (a loop ended by `max` alone escalates the run at once, nothing after it runs).
+# open-findings comment runs (a loop ended by `max` alone escalates the run at once, nothing after it runs).
 # Start with POST /api/tickets/:key/flow {"flow": "game-art"}; the ticket track (`bug` writes the repro test first) reaches the pipelines by itself.
 id: game-art
 version: 1
@@ -44,7 +44,13 @@ steps:
         pushes: true
         when: "steps.review.outputs.verdict == 'need-fix'"
         with: { report_from: review }
-  - { id: review_exhausted, kind: action, use: gh.issue_label, with: { state: blocked }, phase: Revue, when: "steps.review.outputs.verdict != 'done'" }
-  - { id: review_escalate, kind: action, use: fail, phase: Revue, with: { kind: business, message: "Revue épuisée : issue bloquée" }, when: "steps.review.outputs.verdict != 'done'" }
+  # A review that is not done after the last round is not a stop: the open findings go on the issue and the PR goes to test and to the human merge.
+  - id: review_left_open
+    kind: action
+    use: gh.issue_comment
+    phase: Revue
+    with: { body: "Revue non convergée après {{ settings.max_review_rounds }} tours : les constats restants restent ouverts (voir la dernière revue et le corps de la PR). La PR continue vers le test, le merge humain tranche." }
+    when: "steps.review.outputs.verdict != 'done'"
+    on_error: warn
   - { id: to_test, kind: action, use: ticket.to_test, phase: Passage en test }
   - { id: clean, kind: action, use: worktree.remove, phase: Nettoyage, on_error: warn }

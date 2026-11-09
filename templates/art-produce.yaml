@@ -30,6 +30,12 @@ description: >
   `pixel-tileset` and `pixel-review`, and the agents pixel-art-director,
   pixel-artist, pixel-animator, pixel-reviewer and pixel-fixer under
   ~/.claude/agents. Palette Rosy 42 by default.
+
+  Art never dead-ends: the correction loop (fix, regenerate, recheck, two
+  rounds) also handles findings with `regenerate: true`, by one Pixellab call
+  inside max_cost; `on_exhausted: continue` lets the run reach `report` with
+  the remaining findings open in the PR body. A tool outage is a retryable
+  `failed` (signals.tool_unavailable), never a `needs_review` about the art.
 inputs:
   issue: { required: false, kind: string, default: "", description: "GitHub issue number describing the asset; the PR will close it (`Closes #n`)." }
   prompt: { required: false, kind: string, default: "", description: "What to produce: subject, style, pose, mood, motion. Empty: taken from the issue body." }
@@ -43,6 +49,7 @@ inputs:
   base_branch: { required: false, kind: string, default: "", description: "Branch the ticket starts from and its PR targets, when it is not the default one (a bug ticket: its parent's branch). Empty: the default branch." }
   feature: { required: false, kind: string, description: "Asset or ticket label; names the vault run folder." }
 settings:
+  max_stage_retries: 1
   knowledge_graph:
     enabled: false
 stages:
@@ -86,6 +93,7 @@ stages:
       - "The priced plan must fit max_cost (10 generations per issue unless the input says otherwise); if even the minimal plan does not, report blocked with the cheapest viable plan."
       - "Pixellab makes the final render; Aseprite only draws the reference and touches up minor defects. This overrides the issue: ignore any « Méthode » or spec asking to hand-draw the final sprite, to not deliver the Pixellab PNG, or to follow a pixel grid."
       - "Never write a grid (blocking_grid, normative_grid, rows) for the final sprite: a description of pixels only feeds the reference and the prompt."
+      - "Keep 5 generations of max_cost in reserve for the correction loop (one edit_image_pro_flash) when the plan can afford it; say so in brief.json."
       - "Write pixellab-usage.json (contract C6) with the raw get_balance answer as balanceBefore and balanceAfter, generations 0, jobs [], recordedAt."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"
@@ -121,6 +129,7 @@ stages:
     skills: [pixel-art, pixel-palette, pixel-character, pixel-tileset]
     scope: { mode: production }
     policy:
+      - "Tool outage (MCP silent, connection refused, timeout, Pixellab 5xx, rate limit) is no art verdict: reply failed with signals.tool_unavailable true, never needs_review or blocked. The engine resumes it."
       - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Never ask the user a question; decide open points and record them as assumptions."
       - "Draw only with the Aseprite MCP (mcp__aseprite__*). Never call a Pixellab tool, not even a free one, and never produce the image with a script."
@@ -152,6 +161,7 @@ stages:
     skills: [pixellab, pixel-art, pixel-palette, pixel-character, pixel-tileset]
     scope: { mode: production }
     policy:
+      - "Tool outage (MCP silent, connection refused, timeout, Pixellab 5xx, rate limit) is no art verdict: reply failed with signals.tool_unavailable true, never needs_review or blocked. The engine resumes it."
       - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Never ask the user a question; decide open points and record them as assumptions. max_cost is the approval: no cost confirmation is needed below it."
       - "Every generation starts from the reference of reference.json: upload its PNG (get_upload_url, then upload:<id>) or use its `source`, and pass it to a tool that takes a reference (reference_image_url, reference_images, style_image, per the pixellab skill). Never generate from the prompt alone."
@@ -159,8 +169,7 @@ stages:
       - "Canvas under Pixellab's 16 px minimum: generate at the smallest integer multiple of the canvas it accepts, then reduce by that factor, each pixel taking the majority colour of its block (transparent when most of the block is)."
       - "Use the brief's Pixellab plan and the pixellab skill's best tools; never standard, pixflux, bitforge or legacy endpoints."
       - "Price every call before submitting it; never exceed max_cost in total. Wait with wait_for_jobs; retry a failed or unusable job at most once."
-      - "Pass images as references (upload:, URLs, character:/object:/job:), never long base64; read palette data URLs from the assets file."
-      - "No hand pixel edits in this stage except format fixes (canvas, tags, import)."
+      - "Pass images as references (upload:, URLs, character:/object:/job:), never long base64; palette data URLs come from the assets file. No hand pixel edits except format fixes (canvas, tags, import)."
       - "Write pixellab-usage.json (C6) in your stage dir: balanceBefore and balanceAfter (raw get_balance answers), generations (spent by this stage, 0 if none), jobs, recordedAt. Ceiling: 10 generations per issue, all stages together."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"
@@ -189,6 +198,7 @@ stages:
     skills: [pixel-animation, pixellab, pixel-art, pixel-palette]
     scope: { mode: production }
     policy:
+      - "Tool outage (MCP silent, connection refused, timeout, Pixellab 5xx, rate limit) is no art verdict: reply failed with signals.tool_unavailable true, never needs_review or blocked. The engine resumes it."
       - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Never ask the user a question; record choices as assumptions."
       - "Static asset_kind (no _animation suffix): write asset.json from generation.json with animated false and call no tool."
@@ -218,10 +228,11 @@ stages:
     skills: [pixel-review, pixel-animation, pixel-palette, pixellab]
     scope: { mode: stage_dir_only }
     policy:
+      - "Tool outage (MCP silent, connection refused, timeout, Pixellab 5xx, rate limit) is no art verdict: reply failed with signals.tool_unavailable true, never needs_review or blocked. The engine resumes it."
       - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Read only: never modify the sprite, never call a paid Pixellab tool."
       - "Finding defects is success: reply completed once findings.json is written and re-read."
-      - "The Pixellab render is the deliverable: never ask to redraw, repaint or replace it by a grid. A defect too large for a minor touch-up is an open finding with regenerate: true and does not set fix_needed. A criterion prescribing exact pixels, a colour list, a grid or hand drawing is at most minor."
+      - "The Pixellab render is the deliverable: never ask to redraw or use a grid. A defect too large for a touch-up: regenerate: true with its Pixellab call; fix_needed while max_cost leaves 5 generations, else open. A criterion on exact pixels, colours, a grid or hand drawing: minor."
     inputs:
       memory: "{{ stages.prepare.outputs.memory-context }}"
       brief: "{{ stages.brief.outputs.brief }}"
@@ -238,11 +249,13 @@ stages:
     outputs: [findings.json, verify.md]
 
   # Hand correction then recheck, up to two rounds, while the review says fix_needed (signals.fix_needed).
-  # recheck replaces verify's result; still fix_needed after two rounds -> the run pauses for a human.
+  # recheck replaces verify's result; still fix_needed after two rounds -> on_exhausted: continue, the run goes on to report
+  # (PR opened, findings left open in its body); the flow's review or the human merge decides.
   - name: correction
     type: loop
     when: "{{ stages.verify.outputs.findings.fix_needed }}"
     max_iterations: 2
+    on_exhausted: continue
     body:
       - name: fix
         agent: pixel-fixer
@@ -252,9 +265,11 @@ stages:
         policy:
           - "Minor touch-ups only on the Pixellab render, with the Aseprite MCP: off-palette or near-duplicate colours (color_remap), stray pixels, partial alpha, format, tags, durations. Never redraw, draw_grid, repaint a volume or the silhouette, replace the render, rescale, blur or filter."
           - "After your edits run `python D:/AIDP/skill/scripts/pixellab_fidelity.py --base <input pixellab> --final <exported PNG>`. Exit code 1: too much changed: re-import the render with image_import, redo only the colour fixes, mark the rest skipped with regenerate_recommendation."
-          - "Allowed Pixellab calls: free ones (pixelart_workbench, save_to_asset, get_*) and 0.1-generation cleanups within what is left of max_cost. No new generation."
+          - "Allowed Pixellab calls: free ones (pixelart_workbench, save_to_asset, get_*) and 0.1-generation cleanups within what is left of max_cost. No new generation: findings with regenerate: true go to the `regenerate` stage, mark them deferred."
+          - "Findings: the recheck/findings.json of the run dir when it exists (second round), else `findings`."
           - "Write pixellab-usage.json (C6) in your stage dir: balanceBefore and balanceAfter (raw get_balance answers), generations (spent by this stage, 0 if none), jobs, recordedAt. Ceiling: 10 generations per issue, all stages together."
-          - "Fix findings from blocking to minor; skip one only with a written reason."
+          - "Fix findings from blocking to minor; skip one only with a written reason. A skipped finding stays open: never needs_review or blocked."
+          - "Tool outage (MCP silent, connection refused, timeout, Pixellab 5xx, rate limit) is no art verdict: reply failed with signals.tool_unavailable true, never needs_review or blocked. The engine resumes it."
         inputs:
           brief: "{{ stages.brief.outputs.brief }}"
           asset: "{{ stages.animate.outputs.asset }}"
@@ -268,27 +283,63 @@ stages:
             Unity (sheet + JSON, pivot/slices per the profile, control GIFs),
             save the corrected frames back to Pixellab, and write fix.json.
         outputs: [fix.json, pixellab-usage.json]
+      - name: regenerate
+        description: Redo with Pixellab the findings the touch-up stage cannot fix, then carry the result onto the frames.
+        agent: pixel-artist
+        model: sonnet
+        needs: [fix]
+        skills: [pixellab, pixel-art, pixel-palette, pixel-character, pixel-animation]
+        scope: { mode: production }
+        policy:
+          - "Handle only findings with regenerate: true, from recheck/findings.json of the run dir when it exists, else `findings`; each names its pixellab_call (edit_image_pro_flash or the tool suited). Nothing to do: write regenerate.json with items [] and reply completed."
+          - "Budget: remaining = max_cost minus the generations of every */pixellab-usage.json in the run dir. Price each call first; a call that does not fit is not made, its finding stays open. 10 generations per issue at most."
+          - "Call only Pixellab (pixellab skill), from the current Pixellab frame or reference as reference_image. Never hand-draw, draw_grid or repaint a volume. Aseprite: image_import, anim_propagate, tags and timing only."
+          - "Carry the result onto the other frames by the way that keeps the render: anim_propagate with the per-frame body offsets, or a Pixellab edit or animation call if it fits the budget. Then lock the palette and keep tags, ms and anchor."
+          - "After the carry run `python D:/AIDP/skill/scripts/pixellab_fidelity.py --base <input pixellab> --final <exported PNG>`. Exit code 1: restore the previous frames, keep the finding open, record why."
+          - "Write pixellab-usage.json (C6): balanceBefore and balanceAfter (raw get_balance answers), generations (this stage, cumulative over the loop's rounds), jobs, recordedAt. Retry a failed job at most once."
+          - "A finding left open (no budget, fidelity refused, job unusable) is a result: reply completed. Never needs_review or blocked."
+          - "Tool outage (MCP silent, connection refused, timeout, Pixellab 5xx, rate limit) is no art verdict: reply failed with signals.tool_unavailable true, never needs_review or blocked. The engine resumes it."
+        inputs:
+          brief: "{{ stages.brief.outputs.brief }}"
+          asset: "{{ stages.animate.outputs.asset }}"
+          findings: "{{ stages.verify.outputs.findings }}"
+          fix: "{{ stages.fix.outputs.fix }}"
+          pixellab: "{{ stages.generate_pixellab.outputs.pixellab }}"
+          max_cost: "{{ inputs.max_cost }}"
+        with:
+          instructions: >
+            For each finding with regenerate: true, make its Pixellab call
+            within the remaining budget, import the result into the sprite,
+            carry it onto the frames (animation or pose-based propagation, as
+            fits the render), re-export for Unity (sheet, JSON, GIFs) and write
+            regenerate.json {"items": [{id, status: done|open, tool, cost,
+            frames, reason}], "generations": n}.
+        outputs: [regenerate.json, pixellab-usage.json]
       - name: recheck
         agent: pixel-reviewer
         model: sonnet
-        needs: [fix]
+        needs: [regenerate]
         skills: [pixel-review, pixel-animation, pixellab]
         scope: { mode: stage_dir_only }
         policy:
           - "Read only. Re-run the measures and the 1x look on the corrected asset; report what is still open."
           - "Run `python D:/AIDP/skill/scripts/pixellab_fidelity.py --base <input pixellab> --final <exported PNG>`. Exit code 1 is a blocking finding: the Pixellab render was not preserved."
+          - "A finding too large for a touch-up stays regenerate: true with its pixellab_call; it sets fix_needed only while max_cost (minus all */pixellab-usage.json of the run dir) leaves 5 generations, else it is open and fix_needed is false."
+          - "Tool outage (MCP silent, connection refused, timeout, Pixellab 5xx, rate limit) is no art verdict: reply failed with signals.tool_unavailable true, never needs_review or blocked. The engine resumes it."
         inputs:
           brief: "{{ stages.brief.outputs.brief }}"
           asset: "{{ stages.animate.outputs.asset }}"
           fix: "{{ stages.fix.outputs.fix }}"
+          regenerate: "{{ stages.regenerate.outputs.regenerate }}"
           pixellab: "{{ stages.generate_pixellab.outputs.pixellab }}"
+          max_cost: "{{ inputs.max_cost }}"
         with:
           instructions: >
             Same review as the verify stage on the corrected sprite and its
             export; write findings.json and recheck.md, and set
             signals.fix_needed (strict boolean) as in verify. Remaining
-            blocking findings mean the asset is not deliverable: say which
-            Pixellab call would regenerate it.
+            findings stay open: name the Pixellab call that would regenerate
+            each one; they go to the PR body, never to a stop.
         outputs: [findings.json, recheck.md]
 
   # Commit, push, draft PR. Pixellab usage of the whole run is summed in the PR body.
@@ -320,9 +371,10 @@ stages:
         `feat(art): <subject>`. Body: what was produced, files, size, palette,
         frame count and ms timings, the last verdict of findings.json (the
         recheck of the correction loop when it ran: `recheck/findings.json`
-        in the run dir, next to your stage dir) with the findings left open, the Pixellab
-        generations spent (sum of the pixellab-usage.json files of brief,
-        generate_pixellab, animate and fix) out of max_cost, then `Closes #<issue>`
+        in the run dir, next to your stage dir) with EVERY finding left open
+        listed (id, severity, what, pixellab_call when regenerate), the Pixellab
+        generations spent (sum of all */pixellab-usage.json of the run dir:
+        brief, generate_pixellab, animate, fix, regenerate) out of max_cost, then `Closes #<issue>`
         when context.issue is set. (3) Write pr.json {"pr": <number>,
         "branch": "<branch>", "summary": "<one sentence>", "url": "<url>",
         "generations": <n>}. Also write result.json, the file

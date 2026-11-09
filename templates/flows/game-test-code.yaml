@@ -1,21 +1,24 @@
 # Game code test lane: the Unity test of an issue whose development ended (phase `to-test`), then the merge.
 # Started by the dispatcher (never by hand, except through POST /api/tickets/:key/start) as the `test_flow` of the route,
 # when the test lane of the project is free: `dispatcher.test_slots` (1) test flows at a time per project.
-# unity-test <-> unity-fix loop (`report_from: test`), PR ready, human merge. Labels `aidp:*` are set by gh.issue_label, every
-# test is commented on the issue (gh.issue_comment). A loop that runs out of rounds sets `blocked` and ends the run `escalated`
-# (`fail` with kind business). Loop `max` is a literal (the schema wants a u32); keep it equal to settings.max_test_rounds.
+# unity-test, then PR ready and human merge when the test passes. A FAILED test no longer loops on a fix: `bug.create` raises a bug
+# issue (label `bug`, title `fix(GH-<n>): <summary>`, sub-issue of this ticket, route of this ticket) and this flow ends `done` with the
+# ticket back in the `to-test` phase. The ticket waits (`waiting-on:GH-<bug>` in the dispatcher: the bug is an open blocker) while the
+# bug flow (`game-bug-code`) fixes it on `fix/GH-<bug>` from `feat/GH-<n>` and merges it into `feat/GH-<n>` once its review passes.
+# When the bug is closed the dispatcher starts this flow again. At most 3 bugs per ticket (`capped`): the 4th failed test labels the
+# ticket `blocked`, comments why and ends the run `escalated`. The final PR toward `main` stays the human's decision.
+# Labels `aidp:*` are set by gh.issue_label, every test is commented on the issue (gh.issue_comment).
 # Workspace: `workspace: project`. No worktree: every step runs in the MAIN checkout of the project (where the Unity Editor
 # is open). `git.checkout` is the first step: it needs a clean checkout (else `blocked: dirty-checkout`, label aidp:blocked,
 # comment listing the files, run escalated), then switches to the issue branch (the one the dev flow pushed). `unity.refresh`
 # then runs one compile gate of the open editor so the reimport of the branch ends before the test stage. The run holds the
-# project's `unity-editor` resource (one test flow at a time) from that step until `git.restore` (before the merge approval)
-# gives the checkout back to the base branch; the daemon also restores when the run ends escalated, failed or cancelled.
+# project's `unity-editor` resource (one test flow at a time) from that step until `git.restore` (before the merge approval, or
+# right after the bug is raised) gives the checkout back to the base branch; the daemon also restores when the run ends escalated,
+# failed or cancelled.
 id: game-test-code
-version: 1
+version: 2
 inputs:
   ticket: { required: true }
-settings:
-  max_test_rounds: 2
 workspace: project
 steps:
   - { id: checkout, kind: action, use: git.checkout, phase: Préparation }
@@ -40,30 +43,40 @@ steps:
     when: "steps.refresh.outputs.blocked == true"
     on_error: warn
   - { id: refresh_stop, kind: action, use: fail, phase: Préparation, with: { kind: business, message: "blocked: unity-editor" }, when: "steps.refresh.outputs.blocked == true" }
-  - id: test_loop
-    kind: loop
+  - { id: test_label, kind: action, use: gh.issue_label, with: { state: testing }, phase: Test Unity }
+  - { id: test, kind: pipeline, use: unity-test, pushes: true, phase: Test Unity }
+  - id: test_comment
+    kind: action
+    use: gh.issue_comment
     phase: Test Unity
-    max: 2
-    until: "steps.test.outputs.passed == true || !(steps.test_loop.iteration < settings.max_test_rounds)"
-    body:
-      - { id: test_label, kind: action, use: gh.issue_label, with: { state: testing } }
-      - { id: test, kind: pipeline, use: unity-test, pushes: true }
-      - id: test_comment
-        kind: action
-        use: gh.issue_comment
-        with: { body: "Test unity-test : passed={{ steps.test.outputs.passed }}", cost_footer: true }
-        on_error: warn
-      - id: fix_test
-        kind: pipeline
-        use: unity-fix
-        pushes: true
-        when: "steps.test.outputs.passed == false"
-        with: { report_from: test }
-  - { id: test_exhausted, kind: action, use: gh.issue_label, with: { state: blocked }, phase: Test Unity, when: "steps.test.outputs.passed != true" }
-  - { id: test_escalate, kind: action, use: fail, phase: Test Unity, with: { kind: business, message: "Test épuisé : issue bloquée" }, when: "steps.test.outputs.passed != true" }
-  - { id: ready, kind: action, use: gh.pr_ready, phase: Merge }
-  - { id: await, kind: action, use: gh.issue_label, with: { state: awaiting-merge }, phase: Merge }
-  - { id: restore, kind: action, use: git.restore, phase: Merge }
-  - { id: merge_approval, kind: human, phase: Merge, prompt: "Merger la PR ?", choices: [approve] }
-  - { id: merge, kind: action, use: gh.merge, phase: Merge }
-  - { id: done, kind: action, use: gh.issue_label, with: { state: done }, phase: Merge }
+    with: { body: "Test unity-test : passed={{ steps.test.outputs.passed }}", cost_footer: true }
+    on_error: warn
+  # A test with no verdict (neither passed nor failed) is not a bug to raise: a human looks.
+  - { id: test_unknown_label, kind: action, use: gh.issue_label, with: { state: blocked }, phase: Test Unity, when: "steps.test.outputs.passed != true && steps.test.outputs.passed != false" }
+  - { id: test_unknown_stop, kind: action, use: fail, phase: Test Unity, with: { kind: business, message: "Test sans verdict : issue bloquée" }, when: "steps.test.outputs.passed != true && steps.test.outputs.passed != false" }
+  # Failed test: the bug issue, sub-issue of this ticket. `capped` means 3 bugs were already raised.
+  - id: bug
+    kind: action
+    use: bug.create
+    phase: Bug
+    with: { report: "{{ steps.test.outputs.report }}", summary: "{{ steps.test.outputs.summary }}", run_dir: "{{ steps.test.outputs.runDir }}" }
+    when: "steps.test.outputs.passed == false"
+  - { id: bug_capped_label, kind: action, use: gh.issue_label, with: { state: blocked }, phase: Bug, when: "steps.bug.outputs.capped == true" }
+  - id: bug_capped_comment
+    kind: action
+    use: gh.issue_comment
+    phase: Bug
+    with: { body: "Plafond atteint : {{ steps.bug.outputs.count }} bugs ont déjà été ouverts pour ce ticket (maximum 3). Le test échoue encore ; le ticket passe `blocked` et attend une décision humaine." }
+    when: "steps.bug.outputs.capped == true"
+    on_error: warn
+  - { id: bug_capped_stop, kind: action, use: fail, phase: Bug, with: { kind: business, message: "Plafond de 3 bugs atteint : issue bloquée" }, when: "steps.bug.outputs.capped == true" }
+  # The ticket waits for its bug in the `to-test` phase (open blocker), the checkout goes back to the base branch.
+  - { id: bug_wait, kind: action, use: ticket.to_test, phase: Bug, when: "steps.test.outputs.passed == false" }
+  - { id: bug_restore, kind: action, use: git.restore, phase: Bug, when: "steps.test.outputs.passed == false" }
+  # Passed test: ready PR, then the human merge.
+  - { id: ready, kind: action, use: gh.pr_ready, phase: Merge, when: "steps.test.outputs.passed == true" }
+  - { id: await, kind: action, use: gh.issue_label, with: { state: awaiting-merge }, phase: Merge, when: "steps.test.outputs.passed == true" }
+  - { id: restore, kind: action, use: git.restore, phase: Merge, when: "steps.test.outputs.passed == true" }
+  - { id: merge_approval, kind: human, phase: Merge, prompt: "Merger la PR ?", choices: [approve], when: "steps.test.outputs.passed == true" }
+  - { id: merge, kind: action, use: gh.merge, phase: Merge, when: "steps.test.outputs.passed == true" }
+  - { id: done, kind: action, use: gh.issue_label, with: { state: done }, phase: Merge, when: "steps.test.outputs.passed == true" }

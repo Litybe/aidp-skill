@@ -68,7 +68,7 @@ stages:
 
   - name: review
     agent: unity-pr-reviewer
-    model: opus
+    model: sonnet
     skills: [unity-csharp-dev]
     needs: [prepare]
     scope: { mode: stage_dir_only }

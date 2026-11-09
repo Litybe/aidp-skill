@@ -174,7 +174,7 @@ stages:
 
   - name: implement
     agent: unity-issue-implementer
-    model: opus
+    model: sonnet
     needs: [plan]
     scope: { mode: repo_wide }
     policy:

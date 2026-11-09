@@ -134,7 +134,7 @@ stages:
   # `signals.features` array this stage emits.
   - name: scan_features
     agent: analyzer
-    model: opus   # delibere : identification des features metier a partir du code - sonnet manque de jugement ici
+    model: sonnet   # delibere : opus reserve au planning et a la creation graphique
     skills: [graphify]
     needs: [knowledge]
     inputs:
@@ -170,7 +170,7 @@ stages:
   # every later run and every AI agent will trust is worth one human look.
   - name: write_knowledge
     agent: executor
-    model: opus   # delibere : premiere ecriture de la base de connaissance que tout run futur va faire confiance
+    model: sonnet   # delibere : opus reserve au planning et a la creation graphique
     knowledge: service
     scope: { mode: stage_dir_only }
     needs: [scan_structure, scan_events, scan_data, scan_domain, scan_ops]
@@ -204,7 +204,7 @@ stages:
   # aidp injects the note contract (frontmatter, sections) into every shard.
   - name: write_features
     agent: executor
-    model: opus   # delibere : notes features qui font autorite pour les runs futurs - la qualite prime
+    model: sonnet   # delibere : opus reserve au planning et a la creation graphique
     skills: [graphify]
     knowledge: feature
     scope: { mode: stage_dir_only }
@@ -239,7 +239,7 @@ stages:
   # verifies CLAIMS against the code, not prose quality.
   - name: verify
     agent: reviewer
-    model: opus   # delibere : verifie les CLAIMS de la base de connaissance contre le code - gate de confiance
+    model: sonnet   # delibere : opus reserve au planning et a la creation graphique
     skills: [graphify]
     needs: [write_knowledge, write_features]
     inputs:

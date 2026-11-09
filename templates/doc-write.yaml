@@ -62,7 +62,7 @@ stages:
 
   - name: write
     agent: executor
-    model: opus
+    model: sonnet
     needs: [prepare]
     scope: { mode: repo_wide }
     policy:

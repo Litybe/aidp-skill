@@ -7,7 +7,9 @@ description: >
   minutes. The daemon gathers the evidence bundle (flow state.json, journal
   and runtime, run-state.json, native-run.json, the stage replies and
   results, the filtered tail of daemon.err.log, the PR status, the Unity
-  status) before the run starts; the run works in that bundle directory.
+  status, and for bugs that do not converge bug-history.json,
+  test-infra.json, pr-lag.json and shared-patterns.json) before the run
+  starts; the run works in that bundle directory.
   prepare → diagnose → report. The diagnose stage writes diagnosis.json:
   category, cause, evidence[], confidence, action, params, needs_human,
   proposed_patch, summary. The agent only proposes: the daemon checks the
@@ -18,7 +20,7 @@ description: >
   Started only by the daemon (one investigation at a time, outside the dev
   and test slots, under the budget guard). Never started by hand.
 inputs:
-  incident: { required: true, kind: string, description: "Incident id: <key>/<step>@<iteration> or <key>/run:<run id>." }
+  incident: { required: true, kind: string, description: "Incident id: <key>/<step>@<iteration> or <key>/run:<run id>; a ticket whose bugs reached the cap ends <key>/bug_capped_stop@<iteration>.<time>." }
   bundle: { required: true, kind: string, description: "Absolute path of the incident's bundle; the evidence is under evidence/." }
   feature: { required: false, kind: string, description: "Names the vault run folder." }
 settings:
@@ -45,13 +47,21 @@ stages:
         transitions in order), flow-runtime.json (the run id of each pipeline
         step), run-state.json and native-run.json (stage rows, reason),
         stages/<stage>/ (replies and result.json), daemon.err.log.tail,
-        pr-status.json, unity-status.json. (3) Write context.json: incident,
+        pr-status.json, unity-status.json, and the evidence the daemon computed
+        about bugs that do not converge: bug-history.json (per bug of the
+        parent: commit, subject, commits, files with added and deleted
+        lines), test-infra.json (test-infrastructure files the branch changed
+        against origin/main, status, before_bytes, after_bytes, suspect),
+        pr-lag.json (behind_by, mergeable, conflicts, pr_mergeable) and
+        shared-patterns.json (errors found in the reports of 2 tickets or
+        more over 24 h: key, sample, tickets). (3) Write context.json: incident,
         trigger, ticket, flow status, failing step with its reason and
         detail, a timeline (time, source file, event) of the last relevant
         transitions, the last stage replies (stage, status, summary,
         blocked_reason), the PR (number, state, mergeable, head sha, checks),
         the Unity editor (running, heartbeat state and age, lastCompile,
-        lock holder and waiters), and the log lines that name the key, the
+        lock holder and waiters), a `convergence` object copying bug-history,
+        test-infra, pr-lag and shared-patterns as they are, and the log lines that name the key, the
         ticket or the run. Copy facts, never interpret them here.
     outputs: [context.json]
 
@@ -62,13 +72,14 @@ stages:
     scope: { mode: stage_dir_only }
     policy:
       - "Never ask the user a question. Read only, as in prepare: no GitHub write, no commit, no Unity, no edit of the game or of the harness. The daemon executes; you only propose."
-      - "`action` is exactly one of: retry_step, requeue_to_test, requeue_dev, abort_dead_flow_and_requeue, update_pr_branch, release_unity_lock, create_bug_ticket, open_harness_pr, none. Any other name is refused."
+      - "`action` is exactly one of: retry_step, requeue_to_test, requeue_dev, abort_dead_flow_and_requeue, update_pr_branch, release_unity_lock, create_bug_ticket, open_harness_pr, restore_test_infra, none. Any other name is refused."
       - "Never propose a merge, a gate approval, a force-push or a rebase. update_pr_branch updates by merge only."
       - "Never propose, request or start a generation, a retouch or an edit of a sprite or of any asset: that is the art pipeline's work. A run of art stopped on art findings is not an incident; only a passing fault of an art run may be retried."
       - "Act. `none` only with the reason written in `cause` (the fault already cleared by itself). `needs_human` only when no allowed action can help. Never hide behind doubt: pick the safest action that moves the ticket."
       - "Confidence: 0.5 is enough for the reversible actions (retry_step, requeue_to_test, requeue_dev); the others need 0.7. Under the bar the daemon asks a human and runs nothing."
       - "A test that returns passed=false, or a review with real defects, on a ticket: category product_bug, action create_bug_ticket (the daemon raises the bug issue under the ticket, capped at 3). Without a ticket: none, with the reason."
       - "A defect of the harness: category harness_defect, a unified diff against origin/main in proposed_patch and action open_harness_pr, params.repo Litybe/aidp (crates/, docs/) or Litybe/aidp-skill (templates/, agents/). Never apply the patch yourself."
+      - "Bugs that do not converge (trigger bugs_not_converging): read bug-history.json, test-infra.json, pr-lag.json and shared-patterns.json FIRST; the daemon computed them. Try test_infra_regression, branch_behind_main, shared_harness_failure, then real_defect. Never a 4th bug on the same cause."
       - "Every evidence item names a bundle file and quotes the timestamp or the log line it rests on."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"
@@ -98,6 +109,29 @@ stages:
         the final trees do not → update_pr_branch; head_moved_before_merge,
         the PR head changed between the read and the merge → needs_human (the
         merge gate is a human's); product_bug → create_bug_ticket;
+        test_infra_regression, test-infra.json lists a file under
+        Assets/Tests/Playtest, Packages or ProjectSettings that the branch
+        changed with suspect true (deleted, or shrunk by 30 % or more: a
+        re-saved scene without its Player is 12 KB against 27 KB on main) and
+        every test fails the same way → restore_test_infra, params.files the
+        suspect paths (the daemon puts them back from origin/main on the
+        feature branch with a normal push, then reruns the test and re-arms
+        the cap of bugs); branch_behind_main, pr-lag.json shows behind_by
+        above 0 or mergeable false and the errors come from the lag or from
+        an environment error such as "InputSettings has lost its native
+        object" → update_pr_branch (by merge; the daemon then reruns the
+        test); shared_harness_failure, shared-patterns.json lists a pattern
+        found in the reports of 2 tickets or more (a fidelity check exit 1,
+        "no player in the scene") → open_harness_pr when you can write a safe
+        patch, params.repo and params.pattern, else create_bug_ticket (the
+        daemon raises it on the dedicated harness issue, never under a game
+        ticket; one incident covers all the tickets), params.pattern and
+        params.tickets; real_defect, a proven defect of the game that the
+        earlier bugs did not fix → create_bug_ticket with params.defect,
+        params.file and params.criterion (the daemon allows one more bug past
+        the cap only if the cause differs from bug-history.json), else
+        needs_human with the defect, the file and the criterion written in
+        cause;
         harness_defect → open_harness_pr when you can write a patch that
         applies, else needs_human; other. A step that failed and can run
         again → retry_step; a ticket with no flow that must go back to a lane
@@ -107,7 +141,8 @@ stages:
         sentence, always filled>", "evidence": [{"file": "<bundle file>",
         "at": "<time>", "line": "<quoted line>"}], "confidence": <0..1>,
         "action": "<allowed action>", "params": {<step | pr, repo | resource
-        | repo, summary, only when needed>}, "needs_human": <bool>,
+        | repo, summary | files | pattern, tickets | defect, file, criterion,
+        only when needed>}, "needs_human": <bool>,
         "proposed_patch": <null or a unified diff>, "summary": "<two
         sentences in French>"}.
     outputs: [diagnosis.json]

@@ -3,7 +3,11 @@
 Recette partagée des pipelines `unity-implement`, `unity-review`, `unity-fix` et `unity-test`.
 Elle remplace, pour ces pipelines, le `unity-verify.md` batchmode du skill `unity-issue-workflow` :
 **l'éditeur Unity reste ouvert pendant toute la file, on ne lance jamais Unity en batchmode** et on
-ne ferme jamais l'éditeur. Le verrou `unity-editor` du daemon garantit qu'un seul stage touche
+ne ferme jamais l'éditeur.
+Seule exception : créer ou modifier un prefab, une scène ou un `.meta` **sur un worktree** (jamais sur
+`projectRoot`) avec `python <skill_root>/scripts/unity_batch.py --project <worktree> --method
+Game.Cli.Editor.CliCommands.<CreatePrefab|EditScene|BuildScene|Reimport> --arg nom=valeur`. Ce Unity batch
+ne touche pas à l'éditeur ouvert (autre dossier, autre `Library`) ; voir l'en-tête du script (durées, prérequis). Le verrou `unity-editor` du daemon garantit qu'un seul stage touche
 l'éditeur à la fois (pose-le uniquement si ton stage l'exige ; la revue n'utilise pas Unity).
 
 Chemin de ce fichier : `<skill_root>/templates/recipes/unity-verify.md`

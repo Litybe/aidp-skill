@@ -73,6 +73,7 @@ stages:
       - "Never ask the user a question. Drive the Editor through the file bridge; use the Unity MCP only if its tools are present; no computer use."
       - "Findings are a result, not a stop: a failed check goes in import.json and the report, status completed, never needs_review. Only a missing Editor is blocked: unity-editor. A tool that does not answer is failed with signals.tool_unavailable true (retryable)."
       - "Never edit a gameplay scene, prefab or script. Only the scratch test scene and the .meta of the PR's sprites may change; list every change in the report."
+      - "Prefab, scene or clip to create or change: never write its YAML. On a worktree run `python D:/AIDP/skill/scripts/unity_batch.py --project <worktree> --method Game.Cli.Editor.CliCommands.<CreatePrefab|EditScene|Reimport> --arg ...`; on the Editor project use the file bridge."
       - "Never switch branch. Commit and push only the `.meta` files of the PR's assets that the Editor created or that you fixed (step 5), on the PR's branch, never with force. Leave the Editor in Edit Mode."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"

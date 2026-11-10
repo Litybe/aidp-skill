@@ -89,7 +89,8 @@ stages:
       - "Memory proposals: write memory-proposals.json (`{\"proposals\": []}` when nothing qualifies), 5 max, non-obvious reusable lessons only. Rules: templates/recipes/memory.md §3."
       - "Each proposal has only these fields: kind (decision|convention|lesson|gotcha|preference|fact), title (120 chars max), text (600 chars max), scope {route, paths, tags}, refs, confidence (0 to 1). Never type, name, description, body or lesson."
       - "The PR exists: never open a new one, never merge, never mark it ready."
-      - "The Unity Editor stays open: never run Unity in batchmode, never close it, never change branch."
+      - "Never close the open Unity Editor, never run Unity on projectRoot, never change branch. Unity batch only through unity_batch.py on a worktree (see the prefab/scene item)."
+      - "Prefab, scene or .meta to create or change: never write its YAML. Run `python D:/AIDP/skill/scripts/unity_batch.py --project <worktree> --method Game.Cli.Editor.CliCommands.<CreatePrefab|EditScene|BuildScene|Reimport> --arg ...` on the worktree, never on the open Editor project. Read its JSON."
       - "Scenarios use the PlaytestArena scene (no Level_* in `scene`) and `spawn` for test objects; never modify a Level_* for a test (unity-verify.md §3)."
       - "Never weaken, skip or delete a test or a PlaytestDriver scenario to make it pass; a scenario that is wrong is fixed only with the evidence in the report and said in the summary."
     inputs:

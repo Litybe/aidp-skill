@@ -130,7 +130,7 @@ def kill_tree(pid):
 
 
 def git_changed(project):
-    r = subprocess.run(["git", "-C", project, "status", "--porcelain", "--", "Assets"], capture_output=True, text=True)
+    r = subprocess.run(["git", "-C", project, "status", "--porcelain", "-uall", "--", "Assets"], capture_output=True, text=True)
     return [line[3:].strip().strip('"') for line in r.stdout.splitlines() if line.strip()]
 
 
@@ -179,6 +179,8 @@ def main():
     try:
         packages = prepare_packages(project)
         seeded = False if a.no_seed else seed_library(project)
+        prep = round(time.time() - start)
+        run_start = time.time()
         proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=NO_WINDOW)
         while proc.poll() is None:
             if time.time() - start > a.timeout:
@@ -187,6 +189,7 @@ def main():
                 break
             time.sleep(POLL_SECONDS)
         code = proc.wait()
+        unity_seconds = round(time.time() - run_start)
         text = open(log, encoding="utf-8", errors="replace").read() if os.path.isfile(log) else ""
         errors = [l.strip() for l in text.splitlines() if COMPILE_ERROR_RE.search(l) or CLI_FAIL in l][:ERROR_LINES_MAX]
         changed = git_changed(project)
@@ -194,7 +197,7 @@ def main():
         ok = code == 0 and not errors and not bad and not timed_out
         if ok and not a.no_seed and not os.path.isdir(SEED_DIR):
             robocopy(os.path.join(project, "Library"), SEED_DIR)
-        print(json.dumps({"ok": ok, "exit": code, "timeout": timed_out, "seconds": round(time.time() - start),
+        print(json.dumps({"ok": ok, "exit": code, "timeout": timed_out, "seconds": round(time.time() - start), "prep_seconds": prep, "unity_seconds": unity_seconds,
                           "library_seeded": seeded, "packages_copied": packages, "log": log, "errors": errors,
                           "changed": changed, "bad_meta": bad}, ensure_ascii=False))
         return 0 if ok else 1

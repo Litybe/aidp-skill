@@ -19,7 +19,7 @@
 # The test commits and pushes the `.meta` files it creates (scripts/unity_meta.py), hence `pushes: true`; `worktree.remove` at the
 # end saves any unpushed work and removes the worktree.
 id: game-test-art
-version: 2
+version: 3
 inputs:
   ticket: { required: true }
 steps:
@@ -37,11 +37,20 @@ steps:
   - { id: test_unknown_label, kind: action, use: gh.issue_label, with: { state: blocked }, phase: Test, when: "steps.test.outputs.passed != true && steps.test.outputs.passed != false" }
   - { id: test_unknown_stop, kind: action, use: fail, phase: Test, with: { kind: business, message: "Test sans verdict : issue bloquée" }, when: "steps.test.outputs.passed != true && steps.test.outputs.passed != false" }
   # Failed test: the bug issue, sub-issue of this ticket. `capped` means 3 bugs were already raised.
+  # The bug-write pipeline (read only) writes the body of the bug issue: base issue, bug description, plan, numbered CA-n. A failed
+  # or empty writing is a warning, never a stop: `bug.create` then raises the bug with the raw report alone (the behaviour before).
+  - id: bug_write
+    kind: pipeline
+    use: bug-write
+    phase: Bug
+    with: { report: "{{ steps.test.outputs.report }}", report_dir: "{{ steps.test.outputs.runDir }}" }
+    when: "steps.test.outputs.passed == false"
+    on_error: warn
   - id: bug
     kind: action
     use: bug.create
     phase: Bug
-    with: { report: "{{ steps.test.outputs.report }}", summary: "{{ steps.test.outputs.summary }}", run_dir: "{{ steps.test.outputs.runDir }}" }
+    with: { report: "{{ steps.test.outputs.report }}", summary: "{{ steps.bug_write.outputs.summary }}", body: "{{ steps.bug_write.outputs.body }}", body_dir: "{{ steps.bug_write.outputs.runDir }}", run_dir: "{{ steps.test.outputs.runDir }}" }
     when: "steps.test.outputs.passed == false"
   - { id: bug_capped_label, kind: action, use: gh.issue_label, with: { state: blocked }, phase: Bug, when: "steps.bug.outputs.capped == true" }
   - id: bug_capped_comment

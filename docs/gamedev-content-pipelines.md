@@ -116,7 +116,7 @@ canon, conventions d'identifiants et marquages d'état, chiffres, structure, lie
 ## art-fix, map-fix, doc-fix
 
 Correction d'une PR après une revue `need-fix` (ou un test KO). `prepare` (haiku : PR, branche,
-constats ❌/⚠️ de la dernière revue et fils non résolus, tour de correction) → `fix` (sonnet) : commit
+constats ❌/⚠️ de la dernière revue et fils non résolus, tour de correction, rapport du tour précédent) → `plan` (opus, lecture seule) → `fix` (sonnet) : commit
 sur la branche de la PR, push sans force, réponse sur chaque fil, un commentaire `<route>-fix-summary`.
 Aucun Unity ; la PR reste en draft (`ready` et fusion = le flow). Jamais d'assouplissement d'un critère.
 
@@ -131,6 +131,23 @@ Aucun Unity ; la PR reste en draft (`ready` et fusion = le flow). Jamais d'assou
   `99_revue_critique/`, coherence checks de `doc-write`.
 - Sortie : `result.json` `{pr, branch, summary, pushed}` ; `fix.json` porte le détail. Aucun constat
   ouvert : `pushed: false`, rien posté.
+
+### Étape `plan` (`art-fix`, `map-fix`, `doc-fix` et `unity-fix`)
+
+Entre `prepare` et `fix`, `plan` (opus, agent `planner`, `stage_dir_only`, lecture seule : aucune édition,
+aucun git qui écrit, aucune écriture GitHub) produit `plan.md` et `fix-plan.json`
+`{steps: [{finding_ids, files, change, verification}], risks, out_of_scope}`. Entrées : constats de la
+revue, diff de la PR, issue et critères, mémoire C10 (`--stage plan`) et, dès le 2e tour,
+`context.previous_fix` (dernier commentaire `<route>-fix-summary` et ses lignes ⏸️). Chaque constat
+bloquant ou majeur a au moins une étape (fichier exact, symbole ou asset, changement précis, vérification) ;
+un constat à ne pas corriger (faux positif, hors périmètre) est dans `out_of_scope` avec sa raison. Au
+2e tour le plan explique pourquoi le tour précédent a échoué et change d'approche. Sans constat ouvert,
+plan vide. `art-fix` : le plan ne prévoit que des retouches mineures du rendu Pixellab ; un besoin de
+redessin va dans `out_of_scope`.
+
+`fix` reçoit le plan (`needs: [prepare, plan]`), le suit étape par étape, sans élargir le périmètre, et
+rend compte de chaque étape dans `fix.json` `plan_steps: [{index, finding_ids, status done|skipped, reason}]`.
+Contrats de sortie (`result.json`, signaux) inchangés.
 
 ## Flows : qui appelle quoi
 

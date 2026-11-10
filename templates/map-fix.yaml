@@ -2,7 +2,7 @@ version: 5
 id: map-fix
 description: >
   Gamedev route `map`, fix step: correct a map PR after a review or a failed test,
-  then push. prepare → fix. `report_from: review` (default): the points ❌ / ⚠️ of the last `map-review` comment of the PR and the unresolved review threads. `report_from: test`: the failures reported by the last `map-test / map-headless` report of the PR.
+  then push. prepare → plan → fix. `report_from: review` (default): the points ❌ / ⚠️ of the last `map-review` comment of the PR and the unresolved review threads. `report_from: test`: the failures reported by the last `map-test / map-headless` report of the PR.
   A fix never weakens a criterion, a test or a scenario to make it pass.
 
   Fix on the PR's branch in the map files (.ldtk, world_graph.json, briefs, renders under Docs/MapDesign/renders/); room_metrics.py, validate_graph.py, ldtk validate, PNG renders after the edits; push
@@ -51,16 +51,48 @@ stages:
         issue, pr, report_from, fix_round, items [{id, kind thread|review-point|test-ko,
         ref, text, severity, file, where, fix}], open_items, has_open_items,
         open_blocking (items of severity bloquant).
-        Memory (contract C10, templates/recipes/memory.md of the skill): with the issue number, run `rtk aidp memory context --project "<projectRoot>" --issue GH-<issue> --route map --stage fix --budget 2000` (without an issue, drop `--issue`) and save its output as memory-context.md in your stage dir, unchanged; if the command fails, write memory-context.md holding only « Mémoire indisponible : <cause> » and go on. Read the BIBLE by its index (00_INDEX) and get any passage you need with `rtk aidp rag search "<query>" --project "<projectRoot>" --source bible --budget 1500`, never whole.
+        Add to context.json: previous_fix (only when fix_round > 1: the body of the last PR comment containing `map-fix-summary` and its ⏸️ rows, i.e. the items left open and why), and `plan_inputs` {issue_criteria: the acceptance criteria (CA-n) of the issue, pr_diff_hint: `rtk gh pr diff <pr> --name-only`}.
+        Memory (contract C10, templates/recipes/memory.md of the skill): with the issue number, run `rtk aidp memory context --project "<projectRoot>" --issue GH-<issue> --route map --stage plan --budget 2000` (without an issue, drop `--issue`) and save its output as memory-context.md in your stage dir, unchanged; if the command fails, write memory-context.md holding only « Mémoire indisponible : <cause> » and go on. Read the BIBLE by its index (00_INDEX) and get any passage you need with `rtk aidp rag search "<query>" --project "<projectRoot>" --source bible --budget 1500`, never whole.
     outputs: [context.json, memory-context.md]
+
+  - name: plan
+    agent: planner
+    model: opus
+    skills: [map-world-design, map-room-design, ldtk]
+    needs: [prepare]
+    scope: { mode: stage_dir_only }
+    policy:
+      - "Read only: no file edit outside the stage dir, no git that writes (commit, push, checkout, reset), no GitHub write (comment, review, label), no Pixellab or Unity call that changes anything."
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so. Rules: templates/recipes/memory.md."
+      - "Never ask the user a question. Decide open points yourself and record them as assumptions."
+      - "Every blocking or major item of `context.items` gets at least one step (finding_ids, exact file, symbol or asset, precise change, how to verify). An item not to fix (false positive, out of scope) is listed in `out_of_scope` with its reason."
+      - "Round 2 and later (`context.fix_round` > 1): read `context.previous_fix`, say why the last fix left items open, and change the approach. Never repeat a step that failed the same way."
+      - "Never plan to weaken a criterion, test or scenario, and never plan work outside the issue and the PR."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      memory: "{{ stages.prepare.outputs.memory-context }}"
+      instructions: >
+        Plan the fix of the items of `context.items`; `context.has_open_items` false: write an empty plan (steps []) and stop. Read the PR diff
+        (`rtk gh pr diff <pr>`), the issue and its criteria
+        (`rtk gh issue view <issue> --comments`), `context.previous_fix` and
+        the files each item points to. Map: name the room id, the graph node or edge, the layer or entity, the exact change and the check (validate_graph.py, room_metrics.py, ldtk.py validate, render). Graph items first, then rooms. The .ldtk is only edited through the ldtk skill CLI. Write fix-plan.json
+        {"steps": [{"finding_ids": [], "files": [], "change": "", "verification": ""}],
+        "risks": [], "out_of_scope": [{"finding_ids": [], "reason": ""}]} and
+        plan.md (same content, readable: one section per step, then
+        risks and out of scope; from round 2 a first section « Pourquoi le
+        tour précédent a échoué »). Steps in execution order, most serious
+        first. No code, no edit of the repo. Reply completed with signals
+        steps (count) and out_of_scope (count).
+    outputs: [plan.md, fix-plan.json]
 
   - name: fix
     agent: executor
     model: sonnet
     skills: [map-create, map-world-design, map-room-design, ldtk, ldtk-delete]
-    needs: [prepare]
+    needs: [prepare, plan]
     scope: { mode: repo_wide }
     policy:
+      - "Follow `plan` step by step, in order. Report every step (done, or skipped with its reason) in fix.json `plan_steps`. Never widen the scope beyond the plan; a gap in the plan is reported, not improvised."
       - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Memory proposals: write memory-proposals.json (`{\"proposals\": []}` when nothing qualifies), 5 max, non-obvious reusable lessons only. Rules: templates/recipes/memory.md §3."
       - "Each proposal has only these fields: kind (decision|convention|lesson|gotcha|preference|fact), title (120 chars max), text (600 chars max), scope {route, paths, tags}, refs, confidence (0 to 1). Never type, name, description, body or lesson."
@@ -73,12 +105,13 @@ stages:
     inputs:
       context: "{{ stages.prepare.outputs.context }}"
       memory: "{{ stages.prepare.outputs.memory-context }}"
+      plan: "{{ stages.plan.outputs.fix-plan }}"
       task: >
         `context.has_open_items` false: nothing to fix. Write fix.json with
         pushed false, commits [], items [], write result.json with the pr,
         branch, a summary « rien à corriger » and pushed false, post nothing
         on GitHub, and reply completed with signals pr, branch, summary,
-        pushed false. Otherwise: Fix, from blocking to minor, every item of `context.items`, as your section « Lancé par aidp » says. Graph items (lock, key, loop, softlock, region): fix world_graph.json with map-world-design and re-run `validate_graph.py <graph_file> --ldtk <ldtk_file>` to zero FAIL before touching geometry. Room items (jump calibration, door openings, empty or flat room, enemies, hazards): fix the room with map-room-design and the ldtk skill, then `room_metrics.py --file <ldtk_file> --room <id> --graph <graph_file>` and a fresh PNG (`ldtk.py render <room> --grid`) into Docs/MapDesign/renders/. Finish with `room_metrics.py --all --graph`, `validate_graph.py --ldtk` and `ldtk.py validate`. An item from `report_from: test` (map-test / map-headless report: scenario KO on a path, not-testable path) is fixed in the map (a gap too wide, a door out of range), never by weakening a scenario. Remind in « Reste manuel » to close LDtk without saving, reopen the .ldtk and press Ctrl+S.
+        pushed false. Otherwise: follow `plan` (fix-plan.json, readable in plan.md) step by step, in order, and fix, from blocking to minor, every item of `context.items`, as your section « Lancé par aidp » says. Graph items (lock, key, loop, softlock, region): fix world_graph.json with map-world-design and re-run `validate_graph.py <graph_file> --ldtk <ldtk_file>` to zero FAIL before touching geometry. Room items (jump calibration, door openings, empty or flat room, enemies, hazards): fix the room with map-room-design and the ldtk skill, then `room_metrics.py --file <ldtk_file> --room <id> --graph <graph_file>` and a fresh PNG (`ldtk.py render <room> --grid`) into Docs/MapDesign/renders/. Finish with `room_metrics.py --all --graph`, `validate_graph.py --ldtk` and `ldtk.py validate`. An item from `report_from: test` (map-test / map-headless report: scenario KO on a path, not-testable path) is fixed in the map (a gap too wide, a door out of range), never by weakening a scenario. Remind in « Reste manuel » to close LDtk without saving, reopen the .ldtk and press Ctrl+S.
         Commit only the map files (.ldtk, world_graph.json, briefs, renders under Docs/MapDesign/renders/) (`fix(map): ... (#<issue>)`, French, one
         commit per subject), push on the PR's branch (never force), reply on
         EACH review thread with what you did and the commit, resolve the
@@ -86,7 +119,7 @@ stages:
         it (wontfix with evidence, or blocked). Post ONE PR comment marked
         `map-fix-summary` (round `context.fix_round`): the table item /
         status (✅ fixed, ⏸️ left) / evidence (commit, file, measure), then
-        « Reste manuel ». Write fix.json: {"pushed", "commits", "items": [{id,
+        « Reste manuel ». Write fix.json: {"pushed", "plan_steps": [{index, finding_ids, status done|skipped, reason}], "commits", "items": [{id,
         status, evidence}], "fixed_refs", "open_blocking", "checks": [{check,
         ok, detail}]} and result.json, the file the flows read (contract
         C9, flat object): {"pr": <number>, "branch": "<PR head>", "summary":

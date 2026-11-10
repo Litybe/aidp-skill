@@ -38,9 +38,19 @@ Daemon facts the flows rely on:
 Always name the flow when you start one: the flow the daemon starts when the request names none
 (`ticket-delivery`) is no longer part of this skill.
 
+## Merge conflict fallback
+
+Every flow that merges (`game-test-*`, `game-bug-*`, `game-doc`, `perso-delivery`) wraps `gh.merge` in a `merge_loop` (`max: 2`,
+`settings.max_merge_rounds: 2`). When the PR conflicts with its base and nothing else closes its gate, `gh.merge` no longer fails: it
+ends with `merged: false`, `conflict: true` (daemon 7.7.0 or newer; an older daemon still fails the step, as before). The next round
+runs `merge-conflict` (`templates/merge-conflict.yaml`, one stage on Sonnet at effort `low`): it merges `origin/<base>` into the PR
+branch in its own temporary worktree (never the flow's checkout, never a rebase or a force push), resolves the conflicted files, pushes,
+then `gh.merge` runs again on the new head. Still not merged: label `blocked` (`merge_blocked`) and run `escalated` (`merge_escalate`).
+The step id stays `merge`, so the ticket goes `done` only on a real merge.
+
 ## Bug tickets (failed test)
 
-`game-test-code`, `game-test-art` and `game-test-map` (version 2) have no fix loop any more. A failed test (`passed == false`) runs `bug.create`: bug issue labelled `bug` and `bug:code|art|map`, title `fix(GH-<n>): <summary>`, sub-issue of the ticket, marker `<!-- aidp:bug parent=<n> base=feat/GH-<n> -->` in its body. The ticket goes back to `to-test` and waits (open blocker `waiting-on:GH-<bug>`); the run ends `done`. A test without verdict (neither true nor false) blocks the issue. A 4th bug (`capped`, cap 3) labels the ticket `blocked` and ends the run `escalated`.
+`game-test-code`, `game-test-art` and `game-test-map` (version 2) have no fix loop any more. A failed test (`passed == false`) runs `bug.create`: bug issue labelled `bug` and `bug:code|art|map`, title `fix(GH-<n>): <summary>`, sub-issue of the ticket, marker `<!-- aidp:bug parent=<n> base=feat/GH-<n> -->` in its body. The ticket goes back to `to-test` and waits (open blocker `waiting-on:GH-<bug>`); the run ends `done`. Before `bug.create` (version 3 of the test flows) the read-only pipeline `bug-write` writes the body: « Issue de base » (parent and PR summary, links), « Description du bug » (expected and obtained values, product defect against environment failure), « Plan à adopter » (files, types, assets, steps), « Critères d'acceptation » (CA-n tied to the scenario or test that proves them, at least « le test qui a échoué passe » and « aucun autre critère du parent ne régresse »). The daemon keeps the marker first and folds the raw report in `<details>` at the end; if `bug-write` fails the bug is created with the raw report alone (`bug.create` needs the daemon with `--body-file`). The bug flows read these sections: their CA-n are the criteria. A test without verdict (neither true nor false) blocks the issue. A 4th bug (`capped`, cap 3) labels the ticket `blocked` and ends the run `escalated`.
 
 - `game-bug-code.yaml`, `game-bug-art.yaml`, `game-bug-map.yaml`: claim, worktree, branch `fix/GH-<bug>` from `origin/feat/GH-<parent>`, produce/implement, review <-> fix loop (2 rounds), then AUTOMATIC merge into `feat/GH-<parent>` when the verdict is `done` (`gh.pr_ready`, `gh.merge`), `done`, `gh.issue_close`. Not `done`: label `blocked`, run `escalated`, nothing merged.
 - The pipelines (`unity-*`, `art-*`, `map-*`) take the input `base_branch` (filled from the ticket) and pass it as `context.baseBranch`: the PR targets that branch, never `main`.

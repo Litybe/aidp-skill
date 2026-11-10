@@ -97,7 +97,8 @@ stages:
     scope: { mode: stage_dir_only }
     policy:
       - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
-      - "Memory proposals: write memory-proposals.json (`{\"proposals\": []}` when nothing qualifies), 5 max, non-obvious reusable lessons only, as templates/recipes/memory.md §3 says."
+      - "Memory proposals: write memory-proposals.json (`{\"proposals\": []}` when nothing qualifies), 5 max, non-obvious reusable lessons only. Rules: templates/recipes/memory.md §3."
+      - "Each proposal has only these fields: kind (decision|convention|lesson|gotcha|preference|fact), title (120 chars max), text (600 chars max), scope {route, paths, tags}, refs, confidence (0 to 1). Never type, name, description, body or lesson."
       - "No GitHub write, no commit, no push."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"

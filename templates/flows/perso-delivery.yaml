@@ -4,9 +4,11 @@
 # review of the whole issue), fix-review-unity (fix the review comments, playtest again).
 # The human merges. Copy this file under another id to deliver another stack.
 id: perso-delivery
-version: 1
+version: 2
 inputs:
   ticket: { required: true }
+settings:
+  max_merge_rounds: 2
 steps:
   # 1. Worktree from an up-to-date default branch, reused when it exists.
   - id: worktree
@@ -50,10 +52,20 @@ steps:
     prompt: Merge the pull request?
     choices: [approve]
   # 6. Squash merge pinned on the head sha.
-  - id: merge
-    kind: action
-    use: gh.merge
+  # Merge with a conflict fallback: `gh.merge` reports `conflict: true` (the PR conflicts with its base and nothing else
+  # closes its gate) instead of failing; the next round runs `merge-conflict` (Sonnet, effort low: merges the base into the PR
+  # branch in its own worktree, pushes) and merges again. Still not merged after settings.max_merge_rounds: label `blocked`,
+  # run escalated. Loop `max` is a literal: keep it equal to settings.max_merge_rounds.
+  - id: merge_loop
+    kind: loop
     phase: Merge
+    max: 2
+    until: "steps.merge.outputs.merged == true || !(steps.merge_loop.iteration < settings.max_merge_rounds)"
+    body:
+      - { id: merge_fix, kind: pipeline, use: merge-conflict, pushes: true, when: "steps.merge.outputs.conflict == true" }
+      - { id: merge, kind: action, use: gh.merge }
+  - { id: merge_blocked, kind: action, use: gh.issue_label, with: { state: blocked }, phase: Merge, when: "steps.merge.outputs.merged != true" }
+  - { id: merge_escalate, kind: action, use: fail, phase: Merge, with: { kind: business, message: "Conflit de merge non résolu : issue bloquée" }, when: "steps.merge.outputs.merged != true" }
   # 7. Remove the worktree after saving any work in progress. A failure is a warning.
   - id: clean
     kind: action

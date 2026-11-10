@@ -6,7 +6,8 @@
 # `base_branch` input the daemon takes from the ticket).
 # AUTOMATIC MERGE: when the review verdict is `done`, `gh.pr_ready` then `gh.merge` merge the PR into `feat/GH-<parent>` without a human
 # click (`gh.merge` keeps its head check and its merge gate: a red gate or a moved head escalates the step). A loop that runs out of
-# rounds without a `done` verdict labels the bug `blocked` and ends the run `escalated`: nothing is merged. GitHub only closes an issue
+# rounds without a `done` verdict never blocks nor fails the run: the open findings are commented, the PR is ready and the merge waits
+# for a human approval (`merge_approval`). GitHub only closes an issue
 # when its PR reaches the default branch, so `gh.issue_close` closes the bug after the merge: the parent, which waited on this open
 # blocker, goes back to the test lane by itself. The final PR of the parent toward `main` stays the human's decision.
 # Workspace: the default one, a worktree per ticket (dev lane, `dispatcher.slots`). No Unity editor is open on a worktree: the stages
@@ -14,10 +15,11 @@
 # Loop `max` is a literal (the schema wants a u32); keep it equal to settings.max_review_rounds. The step ids `ready` and `merge` move
 # the ticket status to in-review and done.
 id: game-bug-art
-version: 1
+version: 2
 inputs:
   ticket: { required: true }
 settings:
+  max_merge_rounds: 2
   max_review_rounds: 2
 steps:
   - { id: claim, kind: action, use: gh.issue_label, with: { state: in-progress }, phase: Préparation }
@@ -47,10 +49,31 @@ steps:
         pushes: true
         when: "steps.review.outputs.verdict == 'need-fix'"
         with: { report_from: review }
-  - { id: review_exhausted, kind: action, use: gh.issue_label, with: { state: blocked }, phase: Revue, when: "steps.review.outputs.verdict != 'done'" }
-  - { id: review_escalate, kind: action, use: fail, phase: Revue, with: { kind: business, message: "Revue non validée : bug bloqué, rien n'est mergé" }, when: "steps.review.outputs.verdict != 'done'" }
+  # Review not done after the last round: no block, no failure. The open findings are commented and the human merge decides.
+  - id: review_left_open
+    kind: action
+    use: gh.issue_comment
+    phase: Revue
+    with: { body: "Revue non convergée après {{ settings.max_review_rounds }} tours : les constats restants restent ouverts (voir la dernière revue). Le merge attend une validation humaine." }
+    when: "steps.review.outputs.verdict != 'done'"
+    on_error: warn
   - { id: ready, kind: action, use: gh.pr_ready, phase: Merge }
-  - { id: merge, kind: action, use: gh.merge, phase: Merge }
+  - { id: await, kind: action, use: gh.issue_label, with: { state: awaiting-merge }, phase: Merge, when: "steps.review.outputs.verdict != 'done'" }
+  - { id: merge_approval, kind: human, phase: Merge, prompt: "Merger la PR avec des constats d'art ouverts ?", choices: [approve], when: "steps.review.outputs.verdict != 'done'" }
+  # Merge with a conflict fallback: `gh.merge` reports `conflict: true` (the PR conflicts with its base and nothing else
+  # closes its gate) instead of failing; the next round runs `merge-conflict` (Sonnet, effort low: merges the base into the PR
+  # branch in its own worktree, pushes) and merges again. Still not merged after settings.max_merge_rounds: label `blocked`,
+  # run escalated. Loop `max` is a literal: keep it equal to settings.max_merge_rounds.
+  - id: merge_loop
+    kind: loop
+    phase: Merge
+    max: 2
+    until: "steps.merge.outputs.merged == true || !(steps.merge_loop.iteration < settings.max_merge_rounds)"
+    body:
+      - { id: merge_fix, kind: pipeline, use: merge-conflict, pushes: true, when: "steps.merge.outputs.conflict == true" }
+      - { id: merge, kind: action, use: gh.merge }
+  - { id: merge_blocked, kind: action, use: gh.issue_label, with: { state: blocked }, phase: Merge, when: "steps.merge.outputs.merged != true" }
+  - { id: merge_escalate, kind: action, use: fail, phase: Merge, with: { kind: business, message: "Conflit de merge non résolu : issue bloquée" }, when: "steps.merge.outputs.merged != true" }
   - { id: done, kind: action, use: gh.issue_label, with: { state: done }, phase: Merge }
   - { id: close, kind: action, use: gh.issue_close, phase: Merge }
   - { id: clean, kind: action, use: worktree.remove, phase: Nettoyage, on_error: warn }

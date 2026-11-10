@@ -1,0 +1,139 @@
+version: 5
+id: bug-write
+description: >
+  Writes the body of the bug issue that a FAILED test raises (`bug.create`
+  in the test flows `game-test-code`, `game-test-art` and `game-test-map`).
+  Run by those flows between the failed test and `bug.create`: it reads the
+  parent issue, its PR, the raw test report and the project memory, then
+  writes `bug.md`, the body that `bug.create` takes as `with.body`. The
+  daemon keeps the `<!-- aidp:bug ... -->` marker first and appends the raw
+  report in a folded `<details>` block, so `bug.md` holds neither.
+
+  `bug.md` holds, in this order and under these exact titles: « Issue de
+  base » (summary of the parent, links to the parent and its PR), « Description
+  du bug » (what fails, expected and actual values, error, product defect
+  against environment or out-of-PR failure), « Plan à adopter » (files, types
+  and assets to change, steps) and « Critères d'acceptation » (numbered CA-n,
+  each tied to the scenario or test that proves it, at least « le test qui
+  a échoué passe » and « aucun autre critère du parent ne régresse »). The
+  writing follows the skill github-issue-ticket.
+
+  Read only: no GitHub write, no commit, no push, no branch switch. When this
+  pipeline fails, `bug.create` still raises the bug, with the raw report alone.
+
+  Outputs read by the flows: `body` (the file name `bug.md`) and `summary`
+  (the one-line title of the bug), via result.json.
+inputs:
+  issue: { required: true, kind: string, description: "GitHub issue number of the parent, the ticket whose test failed." }
+  report: { required: false, kind: string, default: "", description: "The failure report of the test: a file name (looked up under `report_dir`), a path, or the text itself." }
+  report_dir: { required: false, kind: string, default: "", description: "Run folder of the failed test, where `report` is looked up when it is a file name." }
+  route: { required: false, kind: string, default: "", description: "Route of the parent (code, art or map)." }
+  base_branch: { required: false, kind: string, default: "", description: "Branch of the parent (feat/GH-n), the one the bug starts from." }
+  feature: { required: false, kind: string, description: "Ticket label; names the vault run folder." }
+settings:
+  knowledge_graph:
+    enabled: false
+stages:
+  - name: prepare
+    agent: executor
+    model: haiku
+    scope: { mode: stage_dir_only }
+    policy:
+      - "Never ask the user a question. Decide open points yourself and record them as assumptions."
+      - "Read only: no commit, no push, no branch switch, no GitHub write."
+    inputs:
+      issue: "{{ inputs.issue }}"
+      report: "{{ inputs.report }}"
+      report_dir: "{{ inputs.report_dir }}"
+      route: "{{ inputs.route }}"
+      base_branch: "{{ inputs.base_branch }}"
+    with:
+      instructions: >
+        (1) The repository: `rtk gh repo view --json nameWithOwner`; the
+        project root: `rtk git rev-parse --show-toplevel`. (2) The parent:
+        `rtk gh issue view <issue> --repo <repo> --comments --json
+        number,title,body,labels,url,comments`; save it verbatim as
+        parent.json. (3) Its PR: the parent branch is `base_branch`, else
+        `feat/GH-<issue>`; `rtk gh pr list --repo <repo> --head <branch>
+        --state all --json number,url,title,body,state,headRefName`, then
+        `rtk gh pr view <number> --repo <repo> --json
+        title,body,url,files,state` for the first one; save it as pr.json
+        (null when none). (4) The failure report: `report` holds several
+        lines, then it IS the text; otherwise it is a path or a file name,
+        and a file name is looked up with `find "<report_dir>" -name
+        "<name>"` (depth 6). Copy the report unchanged into
+        test-report.md; none found: test-report.md holds only « Rapport
+        introuvable ». Also copy the scenario result files the report names
+        (`.aidp/playtest/results/*.json` of the project root) into the stage
+        dir when they exist. (5) Memory (contract C10,
+        templates/recipes/memory.md of the skill): run `rtk aidp memory
+        context --project "<projectRoot>" --issue GH-<issue> --route
+        <route, code when empty> --stage test --budget 2000` and save its
+        output as memory-context.md, unchanged; if the command fails, write
+        memory-context.md holding only « Mémoire indisponible : <cause> » and
+        go on. Write context.json with repo, projectRoot, issue, route,
+        baseBranch, parent_url, pr_url (or null), report_found (bool).
+    outputs: [context.json, parent.json, pr.json, test-report.md, memory-context.md]
+
+  - name: write
+    agent: executor
+    model: sonnet
+    needs: [prepare]
+    skills: [github-issue-ticket, unity-csharp-dev]
+    scope: { mode: stage_dir_only }
+    policy:
+      - "Never ask the user a question. Decide open points yourself and list them under « Hypothèses » inside « Description du bug »."
+      - "Read only on the repository and on GitHub: no commit, no push, no branch switch, no `gh` write, no new issue. The only file you write is in your stage dir."
+      - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on."
+      - "Facts only: every file, type, scenario id, value and message you write was read in the report, the parent, the PR or the code. Anything unchecked is marked « non vérifié »."
+      - "Do not write the `<!-- aidp:bug` marker nor a raw-report block: the daemon adds both."
+    inputs:
+      context: "{{ stages.prepare.outputs.context }}"
+      parent: "{{ stages.prepare.outputs.parent }}"
+      pr: "{{ stages.prepare.outputs.pr }}"
+      report: "{{ stages.prepare.outputs.test-report }}"
+      memory: "{{ stages.prepare.outputs.memory-context }}"
+      task: >
+        Write bug.md, the body of the bug issue raised by the failed test of
+        the parent issue `context.issue`, as the skill github-issue-ticket
+        writes a bug ticket: precise technical description, numbered CA-n,
+        scenarios tied to the criteria. Language of the project (French by
+        default), code identifiers in English. Four sections, in this order,
+        with these exact titles (« ## ») and nothing before the first one.
+        (1) « ## Issue de base »: the goal of the parent in two to five
+        sentences (from `parent`), what its PR does (from `pr` and its files),
+        the links `Parente : <parent_url>` and `PR : <pr_url>` (say « aucune
+        PR » when null), and the parent's acceptance criteria in one line
+        each (id and short text) so the bug can point to them. (2) « ## Description
+        du bug »: what fails, read in the report and checked in the code. For
+        each failing item: the criterion, scenario or test (id or
+        `Class.Method`), the expected value and the obtained value, the
+        error message verbatim. Then two labelled lists, « Défaut du
+        produit » (the PR's behaviour is wrong) and « Échec d'environnement
+        ou hors PR » (editor silent, arena or scene without player, missing
+        probe, flaky run, a failure that exists on the parent's base branch
+        too); each list says « Aucun » when empty. Decide the split from the
+        report and from the code, and say why. Close with « Hypothèses ».
+        (3) « ## Plan à adopter »: the files (path, `(modifié)` or
+        `(nouveau)`, each checked to exist), types and signatures, assets or
+        scene objects to change, and the ordered correction steps. Fix
+        the defect only: do not rewrite the feature, do not widen the scope,
+        and name what stays untouched. An environment failure gets a plan
+        for the environment (arena builder, probe, setup), not for the
+        product code. (4) « ## Critères d'acceptation »: `CA-1`, `CA-2`...
+        each testable and observable, in the form « Étant donné ... quand ...
+        alors ... », each followed by « Prouvé par : <scenario id | test
+        name> » (reuse the ids of the report, for example
+        `issue-<n>-ca<k>`). Mandatory: one criterion « le test qui a échoué
+        (<id>) passe » for each failing item, and the last criterion « aucun
+        autre critère de #<parent> ne régresse » proved by the scenarios and
+        suites that passed (list them). Add a criterion per defect found in
+        the description, never fewer than the failing items. A criterion no
+        probe can judge carries `needs-feel-check`. Then write result.json:
+        {"body": "bug.md", "summary": "<title of the bug in one line, 70
+        characters at most, imperative, no prefix>", "criteria": <count of
+        CA-n>, "product_defect": <true|false>, "environment_failure":
+        <true|false>}. The report missing (`context.report_found` false):
+        write bug.md anyway from the parent and the PR, say « Rapport
+        introuvable » in « Description du bug », and reply completed.
+    outputs: [bug.md, result.json]

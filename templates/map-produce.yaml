@@ -60,7 +60,7 @@ stages:
         otherwise blocked. (2) `rtk gh repo view --json
         nameWithOwner,defaultBranchRef`. (3) The request: `prompt`, else the
         issue (`rtk gh issue view <n> --json title,body,labels`): keep its
-        CA-n criteria, rooms, regions, abilities, locks, BIBLE ids (R<n>_<nn>_
+        CA-n criteria (on a bug issue only those under « Critères d'acceptation », never the table inside the folded `<details>` report), rooms, regions, abilities, locks, BIBLE ids (R<n>_<nn>_
         <role>, B<n>, A<n>). (4) BIBLE by index: read
         .claude/BIBLE/00_INDEX (reading order, conflict rule), then only the
         sections of 01_canon (§2.3, §10.5) and 06_maps_biomes that the request
@@ -84,6 +84,7 @@ stages:
     skills: [map-create, map-world-design]
     scope: { mode: repo_wide }
     policy:
+      - "Bug issue (body starts with `<!-- aidp:bug`): its « Description du bug », « Plan à adopter » and « Critères d'acceptation » are the demand, its CA-n the criteria, each proved by the scenario or test it names. The folded raw report is evidence. Fix that defect, never rewrite the parent's feature."
       - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Never ask the user a question; decide open points and record them as assumptions."
       - "Follow map-world-design: extend the existing graph, never restart from zero. Fix the graph, never the script, until validate_graph.py prints zero FAIL; explain each remaining WARN."

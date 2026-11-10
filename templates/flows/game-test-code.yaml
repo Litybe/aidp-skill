@@ -16,9 +16,11 @@
 # right after the bug is raised) gives the checkout back to the base branch; the daemon also restores when the run ends escalated,
 # failed or cancelled.
 id: game-test-code
-version: 2
+version: 3
 inputs:
   ticket: { required: true }
+settings:
+  max_merge_rounds: 2
 workspace: project
 steps:
   - { id: checkout, kind: action, use: git.checkout, phase: Préparation }
@@ -55,11 +57,20 @@ steps:
   - { id: test_unknown_label, kind: action, use: gh.issue_label, with: { state: blocked }, phase: Test Unity, when: "steps.test.outputs.passed != true && steps.test.outputs.passed != false" }
   - { id: test_unknown_stop, kind: action, use: fail, phase: Test Unity, with: { kind: business, message: "Test sans verdict : issue bloquée" }, when: "steps.test.outputs.passed != true && steps.test.outputs.passed != false" }
   # Failed test: the bug issue, sub-issue of this ticket. `capped` means 3 bugs were already raised.
+  # The bug-write pipeline (read only) writes the body of the bug issue: base issue, bug description, plan, numbered CA-n. A failed
+  # or empty writing is a warning, never a stop: `bug.create` then raises the bug with the raw report alone (the behaviour before).
+  - id: bug_write
+    kind: pipeline
+    use: bug-write
+    phase: Bug
+    with: { report: "{{ steps.test.outputs.report }}", report_dir: "{{ steps.test.outputs.runDir }}" }
+    when: "steps.test.outputs.passed == false"
+    on_error: warn
   - id: bug
     kind: action
     use: bug.create
     phase: Bug
-    with: { report: "{{ steps.test.outputs.report }}", summary: "{{ steps.test.outputs.summary }}", run_dir: "{{ steps.test.outputs.runDir }}" }
+    with: { report: "{{ steps.test.outputs.report }}", summary: "{{ steps.bug_write.outputs.summary }}", body: "{{ steps.bug_write.outputs.body }}", body_dir: "{{ steps.bug_write.outputs.runDir }}", run_dir: "{{ steps.test.outputs.runDir }}" }
     when: "steps.test.outputs.passed == false"
   - { id: bug_capped_label, kind: action, use: gh.issue_label, with: { state: blocked }, phase: Bug, when: "steps.bug.outputs.capped == true" }
   - id: bug_capped_comment
@@ -78,5 +89,19 @@ steps:
   - { id: await, kind: action, use: gh.issue_label, with: { state: awaiting-merge }, phase: Merge, when: "steps.test.outputs.passed == true" }
   - { id: restore, kind: action, use: git.restore, phase: Merge, when: "steps.test.outputs.passed == true" }
   - { id: merge_approval, kind: human, phase: Merge, prompt: "Merger la PR ?", choices: [approve], when: "steps.test.outputs.passed == true" }
-  - { id: merge, kind: action, use: gh.merge, phase: Merge, when: "steps.test.outputs.passed == true" }
+  # Merge with a conflict fallback: `gh.merge` reports `conflict: true` (the PR conflicts with its base and nothing else
+  # closes its gate) instead of failing; the next round runs `merge-conflict` (Sonnet, effort low: merges the base into the PR
+  # branch in its own worktree, pushes) and merges again. Still not merged after settings.max_merge_rounds: label `blocked`,
+  # run escalated. Loop `max` is a literal: keep it equal to settings.max_merge_rounds.
+  - id: merge_loop
+    kind: loop
+    phase: Merge
+    when: "steps.test.outputs.passed == true"
+    max: 2
+    until: "steps.merge.outputs.merged == true || !(steps.merge_loop.iteration < settings.max_merge_rounds)"
+    body:
+      - { id: merge_fix, kind: pipeline, use: merge-conflict, pushes: true, when: "steps.merge.outputs.conflict == true" }
+      - { id: merge, kind: action, use: gh.merge }
+  - { id: merge_blocked, kind: action, use: gh.issue_label, with: { state: blocked }, phase: Merge, when: "steps.merge.outputs.merged != true && steps.test.outputs.passed == true" }
+  - { id: merge_escalate, kind: action, use: fail, phase: Merge, with: { kind: business, message: "Conflit de merge non résolu : issue bloquée" }, when: "steps.merge.outputs.merged != true && steps.test.outputs.passed == true" }
   - { id: done, kind: action, use: gh.issue_label, with: { state: done }, phase: Merge, when: "steps.test.outputs.passed == true" }

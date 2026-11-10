@@ -49,6 +49,9 @@ rtk aidp rag search "<requête courte>" --project "<projectRoot>" [--source bibl
 - Chaque extrait porte sa citation `path:Ldébut-Lfin`. Ouvre ensuite **seulement** ces lignes
   (`Read` avec `offset`/`limit`) si l'extrait ne suffit pas.
 - Plusieurs requêtes courtes valent mieux qu'une grosse ; garde `--budget` à 1500 ou moins.
+- Pour une question (« pourquoi », « comment on fait ») plutôt qu'un fichier, `rtk aidp memory recall
+  "<question>" --project "<projectRoot>" --route <route>` rend les mémoires du projet et globales
+  puis les extraits. Demande aidp 7.7.
 - Un résultat vide n'est pas une preuve d'absence : l'index peut être en retard. Ne lance pas
   `aidp rag index` toi-même (le daemon le fait) ; repasse par la lecture ciblée du fichier.
 
@@ -69,12 +72,17 @@ dans leur dossier de stage, même vide :
 
 Règles :
 
+- **Ce format exact, aucun autre champ** : pas de `type`, `name`, `description`, `body`, `lesson`,
+  `why` ; ce n'est pas le format de l'auto-memory de Claude.
 - **5 au plus**, souvent 0 ou 1. `{ "proposals": [] }` est une réponse normale.
 - Seulement une leçon **non évidente et réutilisable** sur un autre ticket : un piège découvert, une
   convention du projet que le code ne montre pas, une décision et sa raison, une cause racine.
 - Jamais : un résumé de l'issue ou de la PR, ce que le diff montre déjà, une information déjà dans la
   BIBLE ou dans la mémoire reçue (vérifie avec `rtk aidp rag search`), un état temporaire.
-- `kind` ∈ `decision | convention | lesson | gotcha | preference | fact`.
+- `kind` ∈ `decision | convention | lesson | gotcha | preference | fact | incident` (`incident` :
+  la cause d'une panne et sa correction ; aidp 7.7).
+- `scope.route` ∈ `code | art | map | doc | tooling`. `tooling` (aidp 7.7) pour ce qui touche les
+  outils (MCP, scripts, pont Unity) : lu par toutes les routes. Sans route, la route du ticket est prise.
 - `title` court et précis ; `text` ≤ 600 caractères, actionnable (quoi faire ou éviter, et pourquoi).
 - `scope` précis : `route` (`code|art|map|doc`), `paths` (globs étroits, pas `**`), `tags`. Une leçon
   sans portée est lue par tout le monde et noie les autres.

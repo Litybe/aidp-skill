@@ -577,6 +577,10 @@ Le moteur `rtk aidp flow` enchaîne des actions sur un ticket. Celles de `perso-
 commits étrangers, par exemple) sort en code 6. Un flow peut attendre un événement externe avec une
 étape `wait` (sonde `pr.reviews` : les revues humaines de la PR sont arrivées). `gh.merge` ne s'exécute
 qu'après le clic de la personne qui valide : le flow s'arrête sur une approbation, jamais de lui-même.
+Si la PR est en conflit avec sa branche de base (et que rien d'autre ne bloque le merge), `gh.merge` ne
+bloque plus le ticket : il rend `conflict: true`, la pipeline `merge-conflict` (Sonnet, effort `low`)
+merge la base dans la branche de la PR dans son propre worktree, pousse, puis le merge est relancé.
+Conflit toujours là après `max_merge_rounds` : le ticket passe `blocked`.
 
 ---
 

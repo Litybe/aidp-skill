@@ -1,0 +1,68 @@
+version: 5
+id: merge-conflict
+description: >
+  Merge fallback of the flows: resolve the conflicts of a PR with its base branch, then push, so
+  that the flow can merge again. One stage, `resolve`, on Sonnet at low effort.
+
+  Run by the `merge_loop` of the flows when `gh.merge` reports `conflict: true` (the PR conflicts
+  with its base and nothing else closes its gate). The agent works in its OWN temporary worktree
+  of the PR head branch, never in the working directory of the flow (the main checkout of a test
+  lane holds the open Unity Editor): it merges `origin/<base>` into the head (no rebase, no force
+  push), resolves every conflicted file keeping the intent of BOTH sides, commits
+  `merge: resolve conflicts with <base> (#<issue>)`, pushes, removes its worktree. A conflict it
+  cannot resolve with confidence is not guessed: it aborts the merge, pushes nothing and reports
+  `resolved: false`; the flow then blocks the issue.
+
+  Outputs read by the flows (C4): result.json of the resolve stage {pr, branch, base, resolved,
+  pushed, files, summary}, mirrored in signals.
+inputs:
+  issue: { required: false, kind: string, default: "", description: "GitHub issue number; the PR linked to it is resolved." }
+  pr: { required: false, kind: string, default: "", description: "PR number. Empty: the PR linked to `issue`, else the open PR of the current branch." }
+  base_branch: { required: false, kind: string, default: "", description: "Base of the PR when it is not the default branch (a bug ticket: its parent's branch). Empty: the PR's own base." }
+  feature: { required: false, kind: string, description: "Feature or ticket label; names the vault run folder." }
+settings:
+  knowledge_graph:
+    enabled: false
+stages:
+  - name: resolve
+    agent: executor
+    model: sonnet
+    effort: low
+    scope: { mode: repo_wide }
+    policy:
+      - "Never ask the user a question. Decide open points yourself and record them in the summary."
+      - "Work only in your own temporary worktree under your stage dir; never edit, switch, stash or reset the working directory of the flow."
+      - "Merge the base into the head: never rebase, never `push --force`, never rewrite published commits."
+      - "Never merge the PR, never mark it ready, never close it: the flow merges after you."
+      - "Resolve a conflict by keeping the intent of both sides; never drop a side wholesale to make the conflict go away. Unsure: abort and report resolved false."
+    inputs:
+      issue: "{{ inputs.issue }}"
+      pr: "{{ inputs.pr }}"
+      base_branch: "{{ inputs.base_branch }}"
+      task: >
+        (1) The PR: `pr` when given; else the open PR linked to `issue`
+        (`rtk gh pr list --search "<issue> in:body" --state open --json number,headRefName,baseRefName`,
+        or the `Closes #<issue>` of the bodies); else the open PR of the current branch. None found,
+        closed or merged: reply blocked. Read `rtk gh pr view <pr> --json number,headRefName,baseRefName,mergeable`.
+        The base is `base_branch` when set, else `baseRefName`. (2) `rtk git fetch origin <head> <base>`.
+        (3) `rtk git worktree add <stage_dir>/wt origin/<head>` then, inside it, `git switch -c
+        <head>-merge-<short sha>` (a local branch that tracks nothing; `<head>` stays checked out
+        where it is). (4) In the worktree: `git merge --no-ff --no-edit origin/<base>`. No conflict
+        (the base already merges cleanly): skip to (6). (5) For each file of
+        `git diff --name-only --diff-filter=U`: read both sides (`git show :2:<file>` ours = the PR,
+        `:3:<file>` theirs = the base) and the merge base (`:1:<file>`), write the resolved file with
+        no conflict marker left, `git add` it. Binary or generated files (.png, .aseprite, .asset,
+        .prefab, .unity, .meta, *.lock): take the side that is coherent with the other files of the
+        merge and say which in the summary; a `.meta` keeps the GUID of the file it belongs to. Text
+        and code: combine the two changes. Check with `git diff --check` and
+        `git grep -n -e "^<<<<<<< " -e "^>>>>>>> "` that no marker is left. A conflict you cannot
+        resolve with confidence: `git merge --abort`, remove the worktree, write result.json with
+        resolved false and the reason, reply completed. (6) `git commit --no-edit -m "merge: resolve
+        conflicts with <base> (#<issue>)"` when the merge left anything to commit, then
+        `git push origin HEAD:<head>` (never force; a rejected push: fetch, start again from (3) once,
+        then report resolved false). (7) `rtk git worktree remove --force <stage_dir>/wt` and delete
+        the temporary local branch. (8) Write result.json, the file the flows read: {"pr": <number>,
+        "branch": "<head>", "base": "<base>", "resolved": <bool>, "pushed": <bool>, "files":
+        ["<path>", ...], "summary": "<two sentences: what conflicted, how it was resolved or why
+        not>"}. Mirror resolved, pushed and the number of files as signals.
+    outputs: [result.json]

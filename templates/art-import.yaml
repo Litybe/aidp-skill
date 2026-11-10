@@ -31,6 +31,7 @@ inputs:
   scene: { required: false, kind: string, default: "Assets/Tests/Playtest/ArtImport.unity", description: "Scratch test scene where the sprite is placed." }
   feature: { required: false, kind: string, description: "Ticket label; names the vault run folder." }
 settings:
+  max_stage_retries: 1
   knowledge_graph:
     enabled: false
 stages:
@@ -70,6 +71,7 @@ stages:
     policy:
       - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Never ask the user a question. Drive the Editor through the file bridge; use the Unity MCP only if its tools are present; no computer use."
+      - "Findings are a result, not a stop: a failed check goes in import.json and the report, status completed, never needs_review. Only a missing Editor is blocked: unity-editor. A tool that does not answer is failed with signals.tool_unavailable true (retryable)."
       - "Never edit a gameplay scene, prefab or script. Only the scratch test scene and the .meta of the PR's sprites may change; list every change in the report."
       - "Never switch branch. Commit and push only the `.meta` files of the PR's assets that the Editor created or that you fixed (step 5), on the PR's branch, never with force. Leave the Editor in Edit Mode."
     inputs:
@@ -122,7 +124,8 @@ stages:
     scope: { mode: stage_dir_only }
     policy:
       - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
-      - "Memory proposals: write memory-proposals.json (`{\"proposals\": []}` when nothing qualifies), 5 max, non-obvious reusable lessons only, as templates/recipes/memory.md §3 says."
+      - "Memory proposals: write memory-proposals.json (`{\"proposals\": []}` when nothing qualifies), 5 max, non-obvious reusable lessons only. Rules: templates/recipes/memory.md §3."
+      - "Each proposal has only these fields: kind (decision|convention|lesson|gotcha|preference|fact), title (120 chars max), text (600 chars max), scope {route, paths, tags}, refs, confidence (0 to 1). Never type, name, description, body or lesson."
       - "No GitHub write, no commit, no push."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"

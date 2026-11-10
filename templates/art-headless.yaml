@@ -86,7 +86,8 @@ stages:
         (palette_get). Compare each measure with the issue requirements. (2) Fidelity: for
         every asset with a render in `context.renders` run `python
         D:/AIDP/skill/scripts/pixellab_fidelity.py --base <render> --final <png>`; exit 1 (too
-        modified) is a finding of weight major, exit 2 (not comparable) a note; no render: note
+        modified) is a finding of weight minor, never major (fidelity is enforced at production
+        by art-produce; here it never sets passed false), exit 2 (not comparable) a note; no render: note
         « sans rendu Pixellab ». (3) Each CA-n gets a verdict: ok, ko (with measured vs
         expected), deferred (needs Unity, say what), minor (note only). The .meta files are not
         a CA-n of the art itself. (4) The .meta: from the worktree root run `python

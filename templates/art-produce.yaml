@@ -70,7 +70,7 @@ stages:
         (1) `rtk gh repo view --json nameWithOwner,defaultBranchRef`. (2) When
         `issue` is set, `rtk gh issue view <n> --json title,body,labels`; the
         asset request is `prompt` when set, else the issue body (keep its
-        CA-n criteria, sizes, frame counts, durations, files, BIBLE notes). (3)
+        CA-n criteria, sizes, frame counts, durations, files, BIBLE notes; on a bug issue the criteria are only the CA-n under « Critères d'acceptation », never the table inside the folded `<details>` report). (3)
         Branch: the current branch when it is not the base branch (the flow
         already made it), else `art/<issue>-<slug>` created from the base
         branch (`git switch -c`); reuse it when it exists. Never touch the
@@ -87,6 +87,7 @@ stages:
     skills: [pixellab, pixel-art, pixel-palette, pixel-animation, pixel-character, pixel-tileset]
     scope: { mode: stage_dir_only }
     policy:
+      - "Bug issue (body starts with `<!-- aidp:bug`): its « Description du bug », « Plan à adopter » and « Critères d'acceptation » are the demand, its CA-n the criteria, each proved by the scenario or test it names. The folded raw report is evidence. Fix that defect, never rewrite the parent's feature."
       - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
       - "Never ask the user a question; decide open points and record them as assumptions."
       - "No paid Pixellab call and no sprite edit: only free tools (get_balance, get_pro_flash_capabilities, get_*, pixelart_workbench inspect/score)."

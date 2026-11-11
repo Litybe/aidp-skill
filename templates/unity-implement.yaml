@@ -184,7 +184,8 @@ stages:
     scope: { mode: repo_wide }
     policy:
       - "Memory: input `memory` = C10 memory block; apply it, fetch more with `rtk aidp rag search`, never read the BIBLE or code whole, cite `path:Lx-Ly`. Memory unavailable: go on and say so in the report. Rules: templates/recipes/memory.md."
-      - "The Unity Editor stays open: never run Unity in batchmode, never close the Editor, never change branch while it is open."
+      - "Never close the open Unity Editor, never run Unity on projectRoot, never change branch while it is open. Unity batch only through unity_batch.py on a worktree (see the prefab/scene item)."
+      - "Prefab, scene or .meta to create or change: never write its YAML. Run `python D:/AIDP/skill/scripts/unity_batch.py --project <worktree> --method Game.Cli.Editor.CliCommands.<CreatePrefab|EditScene|BuildScene|Reimport> --arg ...` on the worktree, never on the open Editor project. Read its JSON."
       - "No playtest and no computer use: the Unity test is the `unity-test` pipeline, later in the flow."
       - "Never mark the PR ready, never merge."
     inputs:

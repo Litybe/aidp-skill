@@ -66,7 +66,7 @@ Champs :
 
 Le daemon réconcilie ces fichiers à la fin du run : dédoublonnage par similarité, et les domaines
 `lore`, `game-design` et `rooms` passent toujours par la boîte de revue `Knowledge/_inbox`
-(`aidp knowledge inbox list|approve|reject`). Tu n'écris jamais toi-même dans `Knowledge/`.
+(`aidp memory inbox list|approve <name>|reject <name>`; `aidp memory ingest-knowledge <file|dir>` ingests a proposals file by hand). Tu n'écris jamais toi-même dans `Knowledge/`.
 
 ### Ce qui mérite une note
 

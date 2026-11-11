@@ -458,9 +458,9 @@ chose de nouveau. Le daemon dédoublonne ; les propositions `lore`, `game-design
 toujours votre accord dans `Knowledge/_inbox` :
 
 ```
-rtk aidp knowledge inbox list
-rtk aidp knowledge inbox approve <note>
-rtk aidp knowledge inbox reject <note>
+rtk aidp memory inbox list
+rtk aidp memory inbox approve <note>
+rtk aidp memory inbox reject <note>
 ```
 
 La recherche vectorielle demande un modèle d'embedding, à installer une fois à la main (`git lfs` requis) ;

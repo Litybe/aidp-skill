@@ -1,7 +1,7 @@
 ---
 name: ai-dev-pipeline-v7
 description: Workflow-native pipeline orchestrator (Unity dev, review and fix, pixel art, aidp and aidp-studio development, knowledge base) whose output lands in an Obsidian vault instead of the repo's .aidp folder. The Rust binary `aidp` compiles the pipeline into a deterministic Claude Code **Workflow** script; you run it with the `Workflow` tool. Sub-agents return schema-validated output (no reply parsing), independent stages run in parallel, executors can use git-worktree isolation, and gates pause/resume natively. Every artefact is written to `<vault>/Pipelines/<repo>/<feature>/<run_id>/` with generated index notes (frontmatter properties + wikilinks) linking runs, stages, features and repos. Triggers on /run-pipeline-v7, "lance la pipeline v7", "run pipeline v7", "ai-dev-pipeline-v7", and on questions about the AIDP vault.
-min_aidp_version: 7.8.0
+min_aidp_version: 7.9.0
 ---
 
 # ai-dev-pipeline v7 — Workflow-native engine, Obsidian-native output
@@ -40,7 +40,7 @@ Jira, Confluence, Sonar, CI, Teams, Mongo, SQS, Datadog, deployment, Codex or Co
   stages that write `memory-proposals.json` also write `knowledge-proposals.json` (the produce stages only
   when the run established something new). The daemon reconciles the proposals at the end of the run; the
   `lore`, `game-design` and `rooms` ones wait in the review inbox `Knowledge/_inbox`
-  (`aidp knowledge inbox list|approve|reject`). Notes live in `<vault>/Knowledge/_global/<domain>/` (every
+  (`aidp memory inbox list|approve <name>|reject <name>`; `aidp memory ingest-knowledge <file|dir>` ingests a proposals file by hand). Notes live in `<vault>/Knowledge/_global/<domain>/` (every
   game) and `<vault>/Knowledge/<repo>/notes/<domain>/` (one game); `Knowledge/_glossary.md` holds the
   French/English synonyms. Vector search needs the embedding model, else BM25 only (see
   `docs/gamedev-content-pipelines.md`). Recipes `templates/recipes/memory.md` (C10) and

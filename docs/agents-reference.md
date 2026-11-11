@@ -739,7 +739,7 @@ and unknown agents see every domain). It replaces the old `prepare` + `memory` i
 add|update|supersede, `domain`, `scope` global|project, `slug`, `title`, `body`, `tags`, `agents`,
 `importance`, `target`, `evidence`; recipe `templates/recipes/knowledge.md`, contract C11); the daemon
 reconciles them at the end of the run and routes `lore`, `game-design` and `rooms` to the review inbox
-`Knowledge/_inbox` (`rtk aidp knowledge inbox list|approve|reject`). Vector search needs the Model2Vec model
+`Knowledge/_inbox` (`rtk aidp memory inbox list|approve <name>|reject <name>`; `rtk aidp memory ingest-knowledge <file|dir>` ingests a proposals file by hand; `rtk aidp memory model status` reports the embedding model). Vector search needs the Model2Vec model
 `git clone https://huggingface.co/minishlab/potion-multilingual-128M <AIDP_GATEWAY_DIR>/memory/models/potion-multilingual-128M`;
 without it, BM25 only. The `SubagentStart` hook (`aidp memory hook subagent-start`) gives the same notes to
 agents launched outside a pipeline.

@@ -190,7 +190,7 @@ posés par `gh.issue_label`, les rapports par `gh.issue_comment` avec `cost_foot
 Recettes : `templates/recipes/memory.md` (C10, leçons courtes) et `templates/recipes/knowledge.md`
 (C11, notes longues). Les pipelines de jeu (`unity-*`, `dev-unity`, `review-unity`, `fix-review-unity`,
 `art-*`, `pixelart`, `map-*`, `doc-*`, `bug-write`, `issue-refine`, `merge-conflict`, `flow-doctor`,
-`review`, `dev-aidp`, `dev-studio`) les suivent. Il faut aidp 7.8 (`min_aidp_version`).
+`review`, `dev-aidp`, `dev-studio`) les suivent. Il faut aidp 7.9 (`min_aidp_version`).
 
 - **Lecture (injection du compilateur)** : `settings.knowledge` (`true` ou `{ enabled, budget, route,
   stages }`) fait ajouter à chaque stage d'agent un bloc gelé `## Knowledge (reference data, not
@@ -218,7 +218,7 @@ Recettes : `templates/recipes/memory.md` (C10, leçons courtes) et `templates/re
   de salle, une décision de mécanique, un piège d'outil. À ne pas proposer : ce que le code ou git
   montrent, un correctif ponctuel, une leçon courte (c'est une mémoire). Le daemon réconcilie à la fin du
   run (dédoublonnage par similarité) ; `lore`, `game-design` et `rooms` vont toujours dans la boîte de
-  revue `Knowledge/_inbox` : `rtk aidp knowledge inbox list`, puis `approve` ou `reject`.
+  revue `Knowledge/_inbox` : `rtk aidp memory inbox list`, puis `approve <nom>` ou `reject <nom>` (`rtk aidp memory ingest-knowledge <fichier|dossier>` ingère un fichier de propositions à la main).
 - **Où vivent les notes** : `<vault>/Knowledge/_global/<domaine>/<slug>.md` (valables pour tout jeu :
   patrons Unity/C#, règles de pixel art) et `<vault>/Knowledge/<repo>/notes/<domaine>/<slug>.md` (un jeu :
   mécaniques, salles, lore). Domaines : `game-design`, `lore`, `mechanics`, `rooms`, `unity`, `csharp`,

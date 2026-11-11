@@ -21,6 +21,8 @@ inputs:
   base_branch: { required: false, kind: string, default: "", description: "Base of the PR when it is not the default branch (a bug ticket: its parent's branch). Empty: the PR's own base." }
   feature: { required: false, kind: string, description: "Feature or ticket label; names the vault run folder." }
 settings:
+  knowledge:
+    enabled: true
   knowledge_graph:
     enabled: false
 stages:

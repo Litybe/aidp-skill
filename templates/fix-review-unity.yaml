@@ -20,6 +20,9 @@ inputs:
   playtest: { required: false, kind: bool, default: true, description: "Test the PR again in the Unity Editor after the fixes." }
   mark_ready: { required: false, kind: bool, default: true, description: "Mark the PR ready for review at the end when pr.markReadyWhenDone holds, the last verification passed and no blocking thread is left open." }
 settings:
+  knowledge:
+    enabled: true
+    route: code
   knowledge_graph:
     enabled: false
 stages:

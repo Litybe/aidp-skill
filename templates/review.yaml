@@ -16,6 +16,9 @@ description: >
 inputs:
   tests_evidence: { required: false, kind: string, default: "" }
 settings:
+  knowledge:
+    enabled: true
+    route: code
   knowledge_graph:
     enabled: true
     refresh: never

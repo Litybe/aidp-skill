@@ -45,6 +45,9 @@ inputs:
   workspace: { required: false, kind: string, default: ".", description: "Chemin absolu du checkout (souvent un worktree git dedie) dans lequel le run travaille : chaque stage qui lit, ecrit, teste ou commite le depot le fait uniquement la." }
   track: { required: true, kind: enum, values: [quick, standard, deep], default: standard, description: "Profondeur du run : quick et standard implementent puis verifient, deep ajoute la revue quatre axes et sa boucle de correction." }
 settings:
+  knowledge:
+    enabled: true
+    route: tooling
   pr_draft: false
   max_correction_iterations: 2
   knowledge_graph:

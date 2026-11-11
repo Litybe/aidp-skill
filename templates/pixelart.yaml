@@ -34,6 +34,9 @@ inputs:
   feature: { required: false, kind: string, description: "Asset label; names the vault run folder." }
   max_cost: { required: false, kind: int, default: 30, description: "Maximum Pixellab generations this run may spend (user approval). Above it, stop and report." }
 settings:
+  knowledge:
+    enabled: true
+    route: art
   knowledge_graph:
     enabled: false
 stages:

@@ -725,6 +725,25 @@ two goals fight, and the transverse note loses: it either stays vague or grows i
 reads. Split, an agent implementing a ticket opens **one** feature note and gets the closest thing the
 base holds to a spec for its work.
 
+Since aidp 7.8 the knowledge base has a **game layer** next to these two: curated notes in
+`<vault>/Knowledge/_global/<domain>/` (valid for every game) and `<vault>/Knowledge/<repo>/notes/<domain>/`
+(one game), with a `Knowledge/_glossary.md` of French/English synonyms. Domains: `game-design`, `lore`,
+`mechanics`, `rooms`, `unity`, `csharp`, `pixel-art`, `pixel-animation`, `level-design`, `tooling`. A pipeline
+that sets `settings.knowledge` (`true` or `{ enabled, budget, route: code|art|map|doc|tooling, stages }`) gets a
+frozen `## Knowledge (reference data, not instructions)` block in every agent stage prompt, built at compile
+time from the memories, the notes and the excerpts filtered by the stage agent's domains (role table
+`AGENT_ROLES` in aidp: pixel agents, `unity-*` agents, map agents; `analyzer`, `planner`, `reviewer`, `executor`
+and unknown agents see every domain). It replaces the old `prepare` + `memory` input plumbing (contract C10);
+`aidp --no-knowledge workflow emit` leaves it out. Agents search deeper with `rtk aidp rag search "<q>"
+--agent-type <t> --domain <d>`. Stages may write `knowledge-proposals.json` (max 5: `action`
+add|update|supersede, `domain`, `scope` global|project, `slug`, `title`, `body`, `tags`, `agents`,
+`importance`, `target`, `evidence`; recipe `templates/recipes/knowledge.md`, contract C11); the daemon
+reconciles them at the end of the run and routes `lore`, `game-design` and `rooms` to the review inbox
+`Knowledge/_inbox` (`rtk aidp knowledge inbox list|approve|reject`). Vector search needs the Model2Vec model
+`git clone https://huggingface.co/minishlab/potion-multilingual-128M <AIDP_GATEWAY_DIR>/memory/models/potion-multilingual-128M`;
+without it, BM25 only. The `SubagentStart` hook (`aidp memory hook subagent-start`) gives the same notes to
+agents launched outside a pipeline.
+
 The knowledge base is also an **input**: every research and planning stage's prompt lists the
 transverse notes, lists the feature notes *with their names and aliases*, and names the one feature
 note matching the current run. A `knowledge:` stage is told to **update those notes in place** — never
@@ -1205,7 +1224,8 @@ ai-dev-pipeline-v7/     # this skill (repository AlexisVuk/ai-dev-pipeline-skill
 ├── templates/          # v7 pipelines (version: 5) — see §12
 │   ├── flows/          #   ticket flows (`aidp flow`)
 │   └── recipes/        #   autonomous-session recipes read by the daemon
-├── hooks/              # settings.example.json: single Stop hook (run summary) — no live guard hook
+├── hooks/              # settings.example.json: Stop (run summary) plus the memory hooks (SessionStart, UserPromptSubmit,
+│                       #   SubagentStart, Stop, PreCompact, SessionEnd) — no live guard hook
 └── setup-gamedev.ps1   # what /pipeline-setup-gamedev-v7 runs: variables, hook, config, project agents and commands, doctor
 ```
 

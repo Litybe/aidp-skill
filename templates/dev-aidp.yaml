@@ -41,6 +41,9 @@ inputs:
   feature: { required: true, kind: string, description: "Nom de la feature : alimente run::feature_key (sa PREMIERE branche testee) - decide le nom de la branche git ET le dossier du vault Obsidian pour ce run." }
   track: { required: true, kind: enum, values: [quick, standard, deep], default: standard, description: "Profondeur du run : quick saute l'etude, standard fait l'etude, deep ajoute la revue quatre axes et sa boucle de correction." }
 settings:
+  knowledge:
+    enabled: true
+    route: tooling
   pr_draft: false
   max_correction_iterations: 2
   # One budget-guarded automatic retry per stage on a `status: "failed"`

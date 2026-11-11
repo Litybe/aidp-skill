@@ -33,6 +33,9 @@ inputs:
   # Kept for the perso-delivery flow, which passes it; this pipeline never marks the PR ready.
   mark_ready: { required: false, kind: bool, default: false, description: "Ignored: the PR is marked ready by fix-review-unity." }
 settings:
+  knowledge:
+    enabled: true
+    route: code
   max_playtest_fix_rounds: 2
   knowledge_graph:
     enabled: false

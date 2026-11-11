@@ -21,6 +21,9 @@ inputs:
   pr: { required: false, kind: string, default: "", description: "PR number to review. Empty: the PR linked to `issue`, else the open PR of the current branch." }
   feature: { required: false, kind: string, description: "Feature or ticket label; names the vault run folder." }
 settings:
+  knowledge:
+    enabled: true
+    route: code
   knowledge_graph:
     enabled: false
 stages:

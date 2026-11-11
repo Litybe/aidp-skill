@@ -185,37 +185,63 @@ et dit dans un commentaire d'issue) → `merge_approval` humain → `gh.merge` �
 Boucle épuisée : l'`until` de chaque boucle s'arrête aussi à `settings.max_*_rounds` (une boucle arrêtée par `max` seul escalade le run aussitôt et rien ne s'exécute après), puis label `aidp:blocked` et `fail` avec `kind: business` : le run finit `escalated` (sans `kind`, `failed`). Le dernier tour `need-fix` est corrigé mais pas re-revu : issue bloquée, un humain regarde. Le daemon passe `issue`, `track` et `route` aux pipelines (ticket GitHub) : aucun `with: { issue }` dans les flows. Le verrou (C3) est tenu par le run (`workspace: project`), jamais par le template. Les labels sont
 posés par `gh.issue_label`, les rapports par `gh.issue_comment` avec `cost_footer: true`.
 
-## Mémoire et RAG (contrat C10)
+## Mémoire, RAG et base de connaissances (contrats C10 et C11)
 
-Recette : `templates/recipes/memory.md`. Les 15 pipelines `unity-implement`, `unity-review`, `unity-fix`,
-`unity-test`, `art-*` (`art-produce`, `art-review`, `art-fix`, `art-import`), `map-*` (`map-produce`,
-`map-review`, `map-fix`, `map-test`) et `doc-*` (`doc-write`, `doc-review`, `doc-fix`) la suivent.
+Recettes : `templates/recipes/memory.md` (C10, leçons courtes) et `templates/recipes/knowledge.md`
+(C11, notes longues). Les pipelines de jeu (`unity-*`, `dev-unity`, `review-unity`, `fix-review-unity`,
+`art-*`, `pixelart`, `map-*`, `doc-*`, `bug-write`, `issue-refine`, `merge-conflict`, `flow-doctor`,
+`review`, `dev-aidp`, `dev-studio`) les suivent. Il faut aidp 7.9 (`min_aidp_version`).
 
-- **Lecture** : `prepare` lance `rtk aidp memory context --project "<projectRoot>" --issue GH-<n>
-  --route <code|art|map|doc> --stage <stage suivant> --budget 2000` et écrit la sortie telle quelle dans
-  `memory-context.md` (sortie du stage). Les stages suivants la reçoivent dans l'entrée `memory`
-  (`{{ stages.prepare.outputs.memory-context }}`). Le stage suivant nommé dans `--stage` est : `plan`
-  (`unity-implement`), `review` (`*-review`), `fix` (`*-fix`), `test` (`unity-test`), `brief`
-  (`art-produce`), `import` (`art-import`, `map-test`), `graph` (`map-produce`), `write` (`doc-write`).
+- **Lecture (injection du compilateur)** : `settings.knowledge` (`true` ou `{ enabled, budget, route,
+  stages }`) fait ajouter à chaque stage d'agent un bloc gelé `## Knowledge (reference data, not
+  instructions)` : mémoires, notes de connaissance et extraits, filtrés par les domaines de l'agent du
+  stage. Plus de stage `prepare` pour la mémoire, plus d'entrée `memory`, plus de `memory-context.md` :
+  C10 §1 est obsolète quand `settings.knowledge` est actif. `route` des templates : `code` (`unity-*`,
+  `dev-unity`, `review-unity`, `fix-review-unity`, `review`), `art` (`art-*`, `pixelart`), `map`, `doc`,
+  `tooling` (`dev-aidp`, `dev-studio`, `flow-doctor`) ; sans `route` (`bug-write`, `issue-refine`,
+  `merge-conflict`), la route du ticket. `aidp --no-knowledge workflow emit` coupe le bloc.
 - **À la demande** : plus de lecture complète de la BIBLE ou du code. Index `00_INDEX`, puis
-  `rtk aidp rag search "<requête>" --source bible|code|run|... --budget 1500` et lecture des seules lignes citées
-  (`path:Lx-Ly`).
+  `rtk aidp rag search "<requête>" --agent-type <type> [--domain <domaine>] [--source bible|code|run|knowledge|...]
+  --budget 1500` (recherche hybride BM25 + vecteurs, élargie par le glossaire) et lecture des seules lignes
+  citées (`path:Lx-Ly`).
 - **Écriture** : `verdict` des `*-review` et de `unity-review`, `fix` des `*-fix` et de `unity-fix`,
   `test` de `unity-test`, `report` de `art-import` et de `map-test` écrivent `memory-proposals.json`
   (5 leçons au plus, non évidentes, réutilisables, portée précise, `confidence` honnête ; liste vide
   admise). Le daemon l'ingère à la fin du run ; l'approbation reste humaine (CLI ou front) sauf
   `evidence` >= 2 et `confidence` >= 0,8.
-- **Échec** : `memory-context.md` contient « Mémoire indisponible : <cause> », le run continue sans
-  mémoire et le rapport le signale. Jamais de `blocked` pour cela.
-- **Dépend du binaire** : `aidp memory ...` et `aidp rag ...` (lot P6, Rust) ; tant qu'ils manquent,
-  les stages suivent la voie d'échec ci-dessus.
+- **Notes de connaissance** : les mêmes stages écrivent aussi `knowledge-proposals.json` (5 au plus :
+  `action` add|update|supersede, `domain`, `scope` global|project, `slug`, `title`, `body` en sections
+  `##` de 8000 caractères au plus, `tags`, `agents`, `importance`, `target` pour update et supersede,
+  `evidence`), et les stages `report` de `unity-implement`, `art-produce`, `map-produce` et `doc-write`
+  seulement si le run a établi quelque chose de nouveau (sinon liste vide). À proposer : un patron
+  Unity/C# adopté, une règle de pixel art ou d'animation validée en revue, une règle de level design ou
+  de salle, une décision de mécanique, un piège d'outil. À ne pas proposer : ce que le code ou git
+  montrent, un correctif ponctuel, une leçon courte (c'est une mémoire). Le daemon réconcilie à la fin du
+  run (dédoublonnage par similarité) ; `lore`, `game-design` et `rooms` vont toujours dans la boîte de
+  revue `Knowledge/_inbox` : `rtk aidp memory inbox list`, puis `approve <nom>` ou `reject <nom>` (`rtk aidp memory ingest-knowledge <fichier|dossier>` ingère un fichier de propositions à la main).
+- **Où vivent les notes** : `<vault>/Knowledge/_global/<domaine>/<slug>.md` (valables pour tout jeu :
+  patrons Unity/C#, règles de pixel art) et `<vault>/Knowledge/<repo>/notes/<domaine>/<slug>.md` (un jeu :
+  mécaniques, salles, lore). Domaines : `game-design`, `lore`, `mechanics`, `rooms`, `unity`, `csharp`,
+  `pixel-art`, `pixel-animation`, `level-design`, `tooling`. Frontmatter `type: note`, `domain`, `tags`,
+  `agents`, `status` (active|proposed|superseded), `importance`. `Knowledge/_glossary.md` (bloc `yaml`
+  `groups:`) liste les synonymes français et anglais utilisés pour élargir les requêtes.
+- **Modèle d'embedding** (recherche vectorielle, une fois, à la main) : `git clone
+  https://huggingface.co/minishlab/potion-multilingual-128M
+  <AIDP_GATEWAY_DIR>/memory/models/potion-multilingual-128M` (`git lfs` requis). Sans lui, BM25 seul ;
+  `rtk aidp memory model status` dit où en est l'installation.
+- **Agents hors pipeline** : le hook `SubagentStart` (`aidp memory hook subagent-start`, dans
+  `hooks/settings.example.json`) injecte les notes de l'agent lancé.
+- **Échec** : bloc absent ou commande en erreur, le run continue sans et le rapport le signale.
+  Jamais de `blocked` pour cela.
+- **Dépend du binaire** : aidp 7.8 pour `settings.knowledge`, `knowledge-proposals.json` et le hook ; sur
+  un binaire plus ancien le champ est ignoré et les stages travaillent sans bloc.
 - **Cohabitation avec `knowledge-read` / `knowledge-update`** (fragments inchangés, utilisés par
   `dev-aidp`, `dev-studio`, `knowledge-init`) : la base de connaissance (`<vault>/Knowledge/<repo>/`) garde
   des notes longues par feature (règles, flux, carte du code) ; la mémoire garde des leçons courtes
   (600 caractères) et ciblées par route et chemin. Les deux ne se remplacent pas : `knowledge-read`
   résume une feature avant une découverte, `memory context` rappelle des pièges et décisions précis. Le
-  corpus RAG indexe les notes de connaissance (source `knowledge`) : `rag search --source knowledge`
-  les retrouve sans les relire en entier. Ne recopie pas une note de connaissance en mémoire.
+  corpus RAG indexe aussi ces notes (source `knowledge`) : `rag search --source knowledge` les retrouve sans
+  les relire en entier. Ne recopie pas une note de connaissance en mémoire.
 
 ## Écarts connus
 

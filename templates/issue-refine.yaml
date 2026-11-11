@@ -21,6 +21,8 @@ inputs:
   repo: { required: false, kind: string, default: "", description: "Repository as owner/name. Empty: the repository of the working directory." }
   feature: { required: false, kind: string, description: "Ticket label; names the vault run folder." }
 settings:
+  knowledge:
+    enabled: true
   knowledge_graph:
     enabled: false
 stages:

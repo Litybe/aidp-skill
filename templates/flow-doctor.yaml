@@ -24,6 +24,9 @@ inputs:
   bundle: { required: true, kind: string, description: "Absolute path of the incident's bundle; the evidence is under evidence/." }
   feature: { required: false, kind: string, description: "Names the vault run folder." }
 settings:
+  knowledge:
+    enabled: true
+    route: tooling
   knowledge_graph:
     enabled: false
 stages:

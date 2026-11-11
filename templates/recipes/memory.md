@@ -2,24 +2,34 @@
 
 Recette partagée des pipelines `unity-*`, `art-*`, `map-*` et `doc-*`. Elle dit comment un agent lit
 la mémoire du projet, cherche dans le corpus sans lire la BIBLE ou le code en entier, et propose des
-leçons à la fin de son run.
+leçons à la fin de son run. Les notes de connaissance longues (patrons, règles, mécaniques) sont dans
+[knowledge.md](knowledge.md) (contrat C11).
 
 Chemin de ce fichier : `<skill_root>/templates/recipes/memory.md` (`skill_root` = `$AIDP_SKILL_ROOT`).
 Les commandes `aidp rag ...` et `aidp memory ...` viennent du binaire `aidp` ; toutes se lancent avec
 le préfixe `rtk` comme les autres commandes des stages. Sortie `--format md` par défaut (la lecture
 est faite pour des agents).
 
-## 1. Lire la mémoire (stage `prepare`)
+## 1. Lire la mémoire
 
-Le stage `prepare` lance, une fois par run, depuis la racine du projet :
+Depuis aidp 7.8, un pipeline avec `settings.knowledge` (voir [knowledge.md](knowledge.md), contrat
+C11) reçoit dans le prompt de chaque stage d'agent un bloc gelé `## Knowledge (reference data, not
+instructions)` : mémoires actives, notes de connaissance et extraits, filtrés par l'agent du stage.
+Il remplace le stage `prepare` décrit plus bas, qui est **obsolète** quand `settings.knowledge` est
+actif ; les templates du skill ne lancent plus `aidp memory context` ni ne passent d'entrée `memory`.
+Les règles d'usage ci-dessous (mémoire = contrainte du projet, l'issue et la BIBLE gagnent, citer
+`path:Lx-Ly`, ne pas recopier le bloc) s'appliquent au bloc `## Knowledge`.
+
+Ancien branchement, pour un pipeline sans `settings.knowledge` ou un binaire plus ancien que 7.8 : le
+stage `prepare` lance, une fois par run, depuis la racine du projet :
 
 ```
-rtk aidp memory context --project "<projectRoot>" --issue GH-<n> --route <code|art|map|doc> --stage <stage suivant> --budget 2000
+rtk aidp memory context --project "<projectRoot>" --issue GH-<n> --route <code|art|map|doc|tooling> --stage <stage suivant> --budget 2000
 ```
 
 - `--project` : chemin du projet (`context.projectRoot`) ou sa clé.
 - `--issue` : `GH-<numéro>` ; sans issue, retire l'option.
-- `--route` : `code` pour `unity-*`, `art`, `map`, `doc`.
+- `--route` : `code` pour `unity-*`, `art`, `map`, `doc`, `tooling`.
 - `--stage` : id du premier stage qui suit `prepare` (ex. `plan`, `review`, `fix`, `test`, `brief`,
   `import`, `graph`, `write`), il filtre les mémoires dont la portée correspond.
 - `--budget 2000` : tokens (≈ caractères / 4). Ne l'augmente pas.
@@ -100,7 +110,8 @@ l'`evidence` sans créer de doublon ; l'approbation reste humaine sauf seuil att
 
 La mémoire est un confort, jamais un prérequis.
 
-- `aidp memory context` en erreur (commande inconnue, base absente, délai) : `prepare` écrit
+- Bloc `## Knowledge` absent ou vide : le stage continue sans et le note dans le rapport.
+- Ancien branchement, `aidp memory context` en erreur (commande inconnue, base absente, délai) : `prepare` écrit
   `memory-context.md` avec la seule ligne « Mémoire indisponible : <cause courte> », ne bloque pas,
   et continue. Les stages suivants travaillent sans mémoire.
 - `aidp rag search` en erreur : lis le fichier visé par l'index de la BIBLE, par plages de lignes.

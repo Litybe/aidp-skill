@@ -434,6 +434,44 @@ tags: [aidp/knowledge-feature]
 ---
 ```
 
+### Base de connaissances du jeu (aidp 7.8)
+
+En plus du socle ci-dessus, le vault garde des **notes de connaissance** du jeu, lues automatiquement par
+les agents :
+
+- `Knowledge/_global/<domaine>/<slug>.md` : valable pour tout jeu (patrons Unity/C#, règles de pixel art) ;
+- `Knowledge/<repo>/notes/<domaine>/<slug>.md` : propre à un jeu (mécaniques, salles, lore) ;
+- `Knowledge/_glossary.md` : synonymes français et anglais qui élargissent les recherches ;
+- `Knowledge/_inbox/` : notes proposées en attente de revue.
+
+Domaines : `game-design`, `lore`, `mechanics`, `rooms`, `unity`, `csharp`, `pixel-art`, `pixel-animation`,
+`level-design`, `tooling`. Chaque pipeline de jeu active `settings.knowledge` : le compilateur colle dans le
+prompt de chaque agent un bloc `## Knowledge` (mémoires, notes, extraits) filtré par le métier de l'agent.
+Pour creuser, l'agent lance `rtk aidp rag search "<requête>" --agent-type <type> --domain <domaine>`. Les
+agents lancés hors pipeline reçoivent les mêmes notes par le hook `SubagentStart`
+(`aidp memory hook subagent-start`, dans `hooks/settings.example.json` avec SessionStart, UserPromptSubmit,
+Stop, PreCompact et SessionEnd).
+
+À la fin d'un run, les stages de revue, de correction, de test et de rapport peuvent proposer jusqu'à 5
+notes (`knowledge-proposals.json`) ; les stages de production n'en proposent que si le run a établi quelque
+chose de nouveau. Le daemon dédoublonne ; les propositions `lore`, `game-design` et `rooms` attendent
+toujours votre accord dans `Knowledge/_inbox` :
+
+```
+rtk aidp memory inbox list
+rtk aidp memory inbox approve <note>
+rtk aidp memory inbox reject <note>
+```
+
+La recherche vectorielle demande un modèle d'embedding, à installer une fois à la main (`git lfs` requis) ;
+sans lui, la recherche reste lexicale (BM25) :
+
+```
+git clone https://huggingface.co/minishlab/potion-multilingual-128M <AIDP_GATEWAY_DIR>/memory/models/potion-multilingual-128M
+```
+
+`rtk aidp memory model status` dit si le modèle est complet.
+
 Vous pouvez éditer le socle à la main : rien n'y est écrasé (seules les notes `_*.md` sont générées), et
 une correction que vous tapez profite à tous les runs suivants. **Compléter les `aliases:` d'une note de
 feature est l'édition manuelle la plus rentable** : c'est ce qui empêche un run futur d'en créer un

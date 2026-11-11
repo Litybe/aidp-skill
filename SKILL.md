@@ -1,7 +1,7 @@
 ---
 name: ai-dev-pipeline-v7
 description: Workflow-native pipeline orchestrator (Unity dev, review and fix, pixel art, aidp and aidp-studio development, knowledge base) whose output lands in an Obsidian vault instead of the repo's .aidp folder. The Rust binary `aidp` compiles the pipeline into a deterministic Claude Code **Workflow** script; you run it with the `Workflow` tool. Sub-agents return schema-validated output (no reply parsing), independent stages run in parallel, executors can use git-worktree isolation, and gates pause/resume natively. Every artefact is written to `<vault>/Pipelines/<repo>/<feature>/<run_id>/` with generated index notes (frontmatter properties + wikilinks) linking runs, stages, features and repos. Triggers on /run-pipeline-v7, "lance la pipeline v7", "run pipeline v7", "ai-dev-pipeline-v7", and on questions about the AIDP vault.
-min_aidp_version: 7.7.0
+min_aidp_version: 7.9.0
 ---
 
 # ai-dev-pipeline v7 — Workflow-native engine, Obsidian-native output
@@ -32,13 +32,22 @@ Jira, Confluence, Sonar, CI, Teams, Mongo, SQS, Datadog, deployment, Codex or Co
   (see `docs/gamedev-content-pipelines.md`), `dev-aidp` (aidp itself),
   `dev-studio` (the `aidp-studio` front), `knowledge-init`, the fragments `knowledge-read`,
   `knowledge-update` and `review`, and the demo `dev-exemple`. Flow: `perso-delivery`.
-- Memory and RAG (contract C10): the `unity-*`, `art-*`, `map-*` and `doc-*` pipelines read project memory in
-  `prepare` (`aidp memory context`, saved as `memory-context.md`, passed on as input `memory`), search the
-  corpus on demand with `aidp rag search` instead of reading the BIBLE or code whole, and their last
-  review, fix and test stages write `memory-proposals.json`. Recipe `templates/recipes/memory.md`; details in
-  `docs/gamedev-content-pipelines.md`. The fragments `knowledge-read` / `knowledge-update` stay: knowledge =
-  long per-feature notes in the vault, memory = short targeted lessons. If the `aidp memory` / `aidp rag`
-  commands fail, the run goes on without memory and says so in its report.
+- Memory, RAG and the game knowledge base (contracts C10, C11, aidp 7.8): the game pipelines set
+  `settings.knowledge`, so the compiler puts a frozen `## Knowledge (reference data, not instructions)` block
+  (memories, knowledge notes, excerpts, filtered by the agent of the stage) in every agent prompt; the old
+  `prepare` step with `aidp memory context` and the `memory` input is gone. Agents search deeper with
+  `aidp rag search "<q>" --agent-type <t> --domain <d>` instead of reading the BIBLE or code whole, and the
+  stages that write `memory-proposals.json` also write `knowledge-proposals.json` (the produce stages only
+  when the run established something new). The daemon reconciles the proposals at the end of the run; the
+  `lore`, `game-design` and `rooms` ones wait in the review inbox `Knowledge/_inbox`
+  (`aidp memory inbox list|approve <name>|reject <name>`; `aidp memory ingest-knowledge <file|dir>` ingests a proposals file by hand). Notes live in `<vault>/Knowledge/_global/<domain>/` (every
+  game) and `<vault>/Knowledge/<repo>/notes/<domain>/` (one game); `Knowledge/_glossary.md` holds the
+  French/English synonyms. Vector search needs the embedding model, else BM25 only (see
+  `docs/gamedev-content-pipelines.md`). Recipes `templates/recipes/memory.md` (C10) and
+  `templates/recipes/knowledge.md` (C11). The fragments `knowledge-read` / `knowledge-update` stay: they keep
+  the per-feature notes of `Knowledge/<repo>/`. Hooks: `aidp memory hook subagent-start` serves agents
+  launched outside a pipeline (`hooks/settings.example.json`). If a command fails, the run goes on without
+  and says so in its report.
 - Disk: nothing is installed on C:. Skill `D:\AIDP\skill` (`AIDP_SKILL_ROOT`), binary `D:\AIDP\bin`,
   sources `D:\AIDP\src`, vault `D:\AIDP\Vault`, daemon state `D:\AIDP\gateway` (`AIDP_GATEWAY_DIR`),
   agents and commands in `<project>\.claude\`. Only `~/.claude/settings.json` (Stop hook) and

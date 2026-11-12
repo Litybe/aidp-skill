@@ -38,6 +38,24 @@ Daemon facts the flows rely on:
 Always name the flow when you start one: the flow the daemon starts when the request names none
 (`ticket-delivery`) is no longer part of this skill.
 
+## Forced moves (`entries:`)
+
+A ticket can be forced by hand to any board column (`POST /api/tickets/:key/force`, the board's « Forcer vers… », daemon
+7.11.0 or newer). For `review`, `testing` and `merge` the daemon restarts the route's flow from the entry of that name: the
+top-level steps before `step` are skipped (reason `forced`), the `keep` steps still run, and `outputs` are assumed for the
+skipped steps so the conditions after `step` hold. Every flow declares the entries it can land on:
+
+| Flow | `review` | `testing` | `merge` |
+|---|---|---|---|
+| `game-code`, `game-art`, `game-map` | `review_loop`, keeps worktree and branch | | |
+| `game-doc`, `game-bug-code`, `game-bug-map` | `review_loop` | | `ready`, keeps worktree and branch |
+| `game-bug-art` | `review_loop` | | `ready`, assumes `review.verdict: done` |
+| `game-test-code` | | `test_label`, keeps checkout and refresh with their guards | `ready`, assumes `test.passed: true` |
+| `game-test-art`, `game-test-map` | | `test_label`, keeps worktree and branch | `ready`, assumes `test.passed: true` |
+| `perso-delivery` | `review` | | `ready` |
+
+A new step a condition after an entry reads must get its assumed output in that entry.
+
 ## Merge conflict fallback
 
 Every flow that merges (`game-test-*`, `game-bug-*`, `game-doc`, `perso-delivery`) wraps `gh.merge` in a `merge_loop` (`max: 2`,

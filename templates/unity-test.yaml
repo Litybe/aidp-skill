@@ -86,6 +86,7 @@ stages:
       - "Knowledge proposals: write knowledge-proposals.json next to memory-proposals.json (`{\"proposals\": []}` when nothing qualifies), 5 max, durable non-obvious notes only. Exact fields and what deserves a note: templates/recipes/knowledge.md."
       - "Scenarios never depend on level content: no `scene` field (default: PlaytestArena) and test objects posed by `spawn` (unity-verify.md §3); never modify a Level_* for a test."
       - "Never edit game code, a scene, a prefab or an asset, and never save one. The only files you may add to the repository are the scenario files Assets/Tests/Playtest/Scenarios/issue-<n>-ca<k>.json (with their .meta): commit those alone and push them on the PR's branch, never force."
+      - "Before every PlayMode run (suite and each scenario) run `rtk aidp flow unity-focus`: Editor to the foreground. `focused` false or `editor_found` false: retry once, then reply blocked `blocked: unity-editor`. A scenario failed by lost focus is rerun, not reported."
       - "No computer use, no screenshot-driven play: the scenarios, the probes and the result files are the only source of truth. The file bridge is used to call the C1 and C2 entry points and to read the console."
       - "The Unity Editor stays open: never run Unity in batchmode, never close it, never change branch. The only GitHub write allowed is ONE `rtk gh pr comment` per run."
     inputs:

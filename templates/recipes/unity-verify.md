@@ -128,6 +128,7 @@ Après un compile gate vert seulement.
   Pas de fichier au délai : `blocked: unity-editor`.
 - `total: 0` avec `"note": "no-tests"` (aucune assembly de tests du mode) : `tests: none` (pas un échec, mais dis-le).
 - Un test qui échoue est un échec du stage, sauf pour le stage `repro` où le rouge est attendu.
+- Pipeline `unity-test` : un test ou scénario en échec est rejoué une fois seul. Il passe au second run = `flaky`, un avertissement listé dans le rapport, jamais un échec (pas de bug créé). Il échoue encore = échec.
 - Un nouveau fichier sous `Assets/` a besoin de son `.meta` : l'éditeur ouvert l'a créé, `rtk git status`
   doit le montrer, commite-le avec le fichier. Ne commite jamais `Library/`, `Temp/`, `Logs/`,
   `UserSettings/`, `obj/`, `*.csproj`, `*.sln`, `.aidp/`. Si l'éditeur a réécrit `ProjectSettings/*.asset`

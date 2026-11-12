@@ -29,7 +29,7 @@ steps:
     kind: loop
     phase: Revue
     max: 2
-    until: "steps.review.outputs.verdict == 'done' || !(steps.review_loop.iteration < settings.max_review_rounds)"
+    until: "steps.review.outputs.verdict == 'done' || !(steps.review_loop.iteration < settings.max_review_rounds) || (steps.review.outputs.verdict == 'need-fix' && steps.fix.outputs.pushed != true)"
     body:
       - { id: review_label, kind: action, use: gh.issue_label, with: { state: review } }
       - { id: review, kind: pipeline, use: map-review, pushes: false }
@@ -37,6 +37,13 @@ steps:
         kind: action
         use: gh.issue_comment
         with: { body: "Revue map-review : {{ steps.review.outputs.verdict }}", cost_footer: true }
+        on_error: warn
+      # The fix stage reads the review on the PR: the report goes there (unity-review posts its own GitHub review).
+      - id: review_pr_comment
+        kind: action
+        use: gh.pr_comment
+        with: { body: "review.md", body_dir: "{{ steps.review.outputs.runDir }}" }
+        when: "steps.review.outputs.verdict == 'need-fix'"
         on_error: warn
       - id: fix
         kind: pipeline

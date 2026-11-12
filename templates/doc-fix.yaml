@@ -43,7 +43,7 @@ stages:
         blocked. (3) The issue: `issue`, else the `Closes #<n>` of the PR
         body. (4) `rtk git status --porcelain`, ignoring untracked *.meta and what the Unity Editor rewrites alone (Packages/packages-lock.json, ProjectSettings/, UserSettings/), not empty: blocked. Check out
         the PR head branch (`rtk gh pr checkout <pr>`) when it is not the
-        current one. (5) What to fix. The unresolved review threads, the ❌ / ⚠️ rows of the « À corriger » list of the last PR comment headed « Revue avocat du diable » that no `doc-fix-summary` comment answered yet, and the general PR comments of a human posted after it. (6) Fix round: 1 + the
+        current one. (5) What to fix. The unresolved review threads, the ❌ / ⚠️ rows of the « À corriger » list of the last PR comment headed « Revue avocat du diable » that no `doc-fix-summary` comment answered yet, and the general PR comments of a human posted after it. When none of those yields an item, read the newest `../../*/review/findings.json` (the review runs of the same feature, newest first, relative to your stage dir; its `findings` array, ref `<run>/review/findings.json#<id>`, kind review-point, skipping the ids a later `doc-fix-summary` comment already answered): `has_open_items` is false only when that file lists no finding either. Say in `assumptions` which source you used. (6) Fix round: 1 + the
         number of PR comments containing `doc-fix-summary`. (7) Write
         context.json: repo, projectRoot, baseBranch, branch (the PR head),
         issue, pr, fix_round, items [{id, kind thread|review-point,
@@ -63,6 +63,7 @@ stages:
       - "Never ask the user a question. Decide open points yourself and record them as assumptions."
       - "Every blocking or major item of `context.items` gets at least one step (finding_ids, exact file, symbol or asset, precise change, how to verify). An item not to fix (false positive, out of scope) is listed in `out_of_scope` with its reason."
       - "Round 2 and later (`context.fix_round` > 1): read `context.previous_fix`, say why the last fix left items open, and change the approach. Never repeat a step that failed the same way."
+      - "A tool or right missing for an item (Unity Editor, Pixellab, permission): name it, take another route or list the item in out_of_scope with that tool; never plan it again unchanged."
       - "Never plan to weaken a criterion, test or scenario, and never plan work outside the issue and the PR."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"

@@ -67,7 +67,7 @@ stages:
         les fils non résolus »), the ❌ / ⚠️ rows of the « À corriger » list of
         the last review whose body contains `unity-review-summary` that no
         `unity-fix-summary` comment answered yet, and the general PR
-        comments of a human posted after that review. test: the last PR
+        comments of a human posted after that review. When none of those yields an item, read the newest `../../*/review/findings.json` (the review runs of the same feature, newest first, relative to your stage dir; its `findings` array, ref `<run>/review/findings.json#<id>`, kind review-point, skipping the ids a later `unity-fix-summary` comment already answered): `has_open_items` is false only when that file lists no finding either. Say in `assumptions` which source you used. test: the last PR
         comment containing `<!-- unity-test` (its rows with result `fail`:
         scenario or test id, criterion CA-n, expression, actual value,
         message), plus the unresolved threads. Count the items
@@ -93,6 +93,7 @@ stages:
       - "Never ask the user a question. Decide open points yourself and record them as assumptions."
       - "Every blocking or major item of `context.items` gets at least one step (finding_ids, exact file, symbol or asset, precise change, how to verify). An item not to fix (false positive, out of scope) is listed in `out_of_scope` with its reason."
       - "Round 2 and later (`context.fix_round` > 1): read `context.previous_fix`, say why the last fix left items open, and change the approach. Never repeat a step that failed the same way."
+      - "A tool or right missing for an item (Unity Editor, Pixellab, permission): name it, take another route or list the item in out_of_scope with that tool; never plan it again unchanged."
       - "Never plan to weaken a criterion, test or scenario, and never plan work outside the issue and the PR."
     inputs:
       context: "{{ stages.prepare.outputs.context }}"

@@ -9,7 +9,7 @@
 # rounds without a `done` verdict labels the bug `blocked` and ends the run `escalated`: nothing is merged. GitHub only closes an issue
 # when its PR reaches the default branch, so `gh.issue_close` closes the bug after the merge: the parent, which waited on this open
 # blocker, goes back to the test lane by itself. The final PR of the parent toward `main` stays the human's decision.
-# Workspace: the default one, a worktree per ticket (dev lane, `dispatcher.slots`). No Unity editor is open on a worktree: the stages
+# Workspace: the default one, a worktree per ticket (bug lane, `dispatcher.bug_slots`, independent of the dev and test lanes). No Unity editor is open on a worktree: the stages
 # do not run the compile gate nor the tests (`verification.compile = "deferred"`); the parent's test lane runs them again.
 # Loop `max` is a literal (the schema wants a u32); keep it equal to settings.max_review_rounds. The step ids `ready` and `merge` move
 # the ticket status to in-review and done.

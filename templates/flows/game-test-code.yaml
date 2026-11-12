@@ -1,7 +1,8 @@
 # Game code test lane: the Unity test of an issue whose development ended (phase `to-test`), then the merge.
 # Started by the dispatcher (never by hand, except through POST /api/tickets/:key/start) as the `test_flow` of the route,
 # when the test lane of the project is free: `dispatcher.test_slots` (1) test flows at a time per project.
-# unity-test, then PR ready and human merge when the test passes. A FAILED test no longer loops on a fix: `bug.create` raises a bug
+# unity-test, then PR ready and human merge when the test passes. `passed` is false only for a MAJOR failure (flaky and minor
+# findings are reported, never a bug). A FAILED test no longer loops on a fix: `bug.create` raises a bug
 # issue (label `bug`, title `fix(GH-<n>): <summary>`, sub-issue of this ticket, route of this ticket) and this flow ends `done` with the
 # ticket back in the `to-test` phase. The ticket waits (`waiting-on:GH-<bug>` in the dispatcher: the bug is an open blocker) while the
 # bug flow (`game-bug-code`) fixes it on `fix/GH-<bug>` from `feat/GH-<n>` and merges it into `feat/GH-<n>` once its review passes.

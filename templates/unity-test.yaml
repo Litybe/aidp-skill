@@ -123,19 +123,30 @@ stages:
         scenario / result / assert expressions with actual values / capture,
         the EditMode and PlayMode counts, the compile gate result, the
         feel-check criteria left to a human, and the captures (first five at
-        most). (6) Verdict: passed is true only when the compile gate is ok,
-        no test of either suite still fails after its rerun, every CA-n
-        scenario passes or is `flaky` (the feel_check criteria aside) and no
-        probe is missing. Flaky alone never makes passed false: no bug issue
-        is raised for noise. Write test-report.md (the same
+        most). (6) Severity, before the verdict: grade every remaining
+        failure (rerun included) `major` or `minor`. `major` = the product is
+        wrong in a way that breaks a CA-n or the game: compile error, a test
+        or scenario failing on the behaviour a criterion asks for, an
+        unhandled exception or crash in the console during the run, a missing
+        probe, a regression of existing behaviour. `minor` = the criterion is
+        met but something is off: cosmetic or tolerance-level gap, a
+        non-blocking console warning, a failing assertion outside every CA-n,
+        an environment failure (editor silent, arena or scene without
+        player, failure also on the base branch), a missing capture. Doubt
+        between the two: `minor`. Say the grade and why in the report and
+        the comment (column « Gravité »). Verdict: passed is false only when
+        at least one failure is `major`; the compile gate in error is always
+        `major`. Minor failures and `flaky` runs never make passed false:
+        they are listed (« Mineurs », « Instables ») and no bug issue is
+        raised for them. Write test-report.md (the same
         content as the comment, with the result files' paths) and
         playtest.json {"round", "passed", "compile": {ok, errors, warnings},
         "editmode": {total, failed}, "playmode": {total, failed},
         "scenarios": [{id, criterion, result pass|fail|flaky|skipped,
-        asserts, captures}], "feel_check": [ids], "comment_url"} and
+        severity major|minor (fail only), asserts, captures}], "feel_check": [ids], "comment_url"} and
         result.json, the file the flows read: {"passed": <bool>, "report":
-        "test-report.md", "round": <n>, "failed": [scenario or test ids, flaky ones excluded],
-        "flaky": [scenario or test ids], "feel_check": [ids], "comment_url": "<url>"}. Feel-check criteria
+        "test-report.md", "round": <n>, "failed": [ids of the major failures only],
+        "minor": [ids], "flaky": [ids], "feel_check": [ids], "comment_url": "<url>"}. Feel-check criteria
         left after all this (others tested): reply blocked with « blocked:
         feel-check » in the summary, signals.blocked_reason feel-check,
         result.json with passed false, and everything above still written

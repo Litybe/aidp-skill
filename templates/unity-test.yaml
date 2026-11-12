@@ -97,7 +97,9 @@ stages:
         is the contract of C1 and C2, follow it to the letter. (1) Compile
         gate C1 (§1): errors mean the test stops there, passed false, with
         the error list. (2) EditMode then PlayMode suites (§2): a failing
-        test is evidence, not a stop. (3) One scenario per CA-n of
+        test is evidence, not a stop; rerun each failing test once, alone
+        (filter by its full name): it passes on the rerun = `flaky`, it fails
+        again = failed. (3) One scenario per CA-n of
         `context.criteria`: keep the file of `context.existing_scenarios`
         when it still matches the criterion, else write
         Assets/Tests/Playtest/Scenarios/issue-<n>-ca<k>.json (C2 schema, §3)
@@ -110,7 +112,10 @@ stages:
         list it for the feel-check. Play each scenario through
         `PlaytestBridge.Run` or the file bridge and read
         .aidp/playtest/results/<id>.json (§3); a scenario that fails is rerun
-        once to rule out flakiness, and noted `flaky` if the two runs differ.
+        once to rule out flakiness: the rerun passes = `flaky` (the first
+        run was noise), the rerun fails too = `fail`. A `flaky` test or
+        scenario is a warning, never a failure: it is listed in the report and
+        the comment under « Instables », and it does not make the test fail.
         (4) Commit and push only the new or changed scenario files
         (`test(playtest): scenarios issue-<n> (#<n>)`). (5) Post ONE PR
         comment starting with `<!-- unity-test round=<test_round> -->` then
@@ -119,16 +124,18 @@ stages:
         the EditMode and PlayMode counts, the compile gate result, the
         feel-check criteria left to a human, and the captures (first five at
         most). (6) Verdict: passed is true only when the compile gate is ok,
-        both suites pass, every CA-n scenario passes (the feel_check criteria
-        aside) and no probe is missing. Write test-report.md (the same
+        no test of either suite still fails after its rerun, every CA-n
+        scenario passes or is `flaky` (the feel_check criteria aside) and no
+        probe is missing. Flaky alone never makes passed false: no bug issue
+        is raised for noise. Write test-report.md (the same
         content as the comment, with the result files' paths) and
         playtest.json {"round", "passed", "compile": {ok, errors, warnings},
         "editmode": {total, failed}, "playmode": {total, failed},
         "scenarios": [{id, criterion, result pass|fail|flaky|skipped,
         asserts, captures}], "feel_check": [ids], "comment_url"} and
         result.json, the file the flows read: {"passed": <bool>, "report":
-        "test-report.md", "round": <n>, "failed": [scenario or test ids],
-        "feel_check": [ids], "comment_url": "<url>"}. Feel-check criteria
+        "test-report.md", "round": <n>, "failed": [scenario or test ids, flaky ones excluded],
+        "flaky": [scenario or test ids], "feel_check": [ids], "comment_url": "<url>"}. Feel-check criteria
         left after all this (others tested): reply blocked with « blocked:
         feel-check » in the summary, signals.blocked_reason feel-check,
         result.json with passed false, and everything above still written

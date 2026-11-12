@@ -13,6 +13,11 @@ inputs:
 settings:
   max_merge_rounds: 2
   max_review_rounds: 2
+# Forced moves (POST /api/tickets/:key/force): each entry lands on `step`, runs only the `keep` steps before it and
+# assumes `outputs` for the skipped ones, so the conditions after it hold.
+entries:
+  review: { step: review_loop, keep: [worktree, branch] }
+  merge: { step: ready, keep: [worktree, branch] }
 steps:
   - { id: claim, kind: action, use: gh.issue_label, with: { state: in-progress }, phase: Préparation }
   - { id: worktree, kind: action, use: git.worktree, phase: Préparation }

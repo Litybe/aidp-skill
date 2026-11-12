@@ -620,6 +620,12 @@ bloque plus le ticket : il rend `conflict: true`, la pipeline `merge-conflict` (
 merge la base dans la branche de la PR dans son propre worktree, pousse, puis le merge est relancé.
 Conflit toujours là après `max_merge_rounds` : le ticket passe `blocked`.
 
+Pour débloquer un ticket à la main, le board d'aidp-studio propose « Forcer vers… » dans le menu d'une
+carte (route `POST /api/tickets/:key/force`) : le ticket passe dans la colonne choisie quel que soit son
+statut, le flow en cours est interrompu, et pour Revue, Test Unity et À merger le flow de la route repart
+de l'entrée du même nom (`entries:` du flow) en sautant les étapes d'avant. Exemple : À tester → À merger
+saute le test Unity, rend la PR prête, pose `aidp:awaiting-merge` et attend l'approbation du merge.
+
 ---
 
 ## 11. Garde-fous et sécurité

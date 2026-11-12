@@ -9,6 +9,11 @@ inputs:
   ticket: { required: true }
 settings:
   max_merge_rounds: 2
+# Forced moves (POST /api/tickets/:key/force): each entry lands on `step`, runs only the `keep` steps before it and
+# assumes `outputs` for the skipped ones, so the conditions after it hold.
+entries:
+  review: { step: review, keep: [worktree, branch] }
+  merge: { step: ready, keep: [worktree, branch] }
 steps:
   # 1. Worktree from an up-to-date default branch, reused when it exists.
   - id: worktree

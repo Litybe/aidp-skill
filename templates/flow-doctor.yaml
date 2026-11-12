@@ -81,7 +81,7 @@ stages:
       - "Act. `none` only with the reason written in `cause` (the fault already cleared by itself). `needs_human` only when no allowed action can help. Never hide behind doubt: pick the safest action that moves the ticket."
       - "Confidence: 0.5 is enough for the reversible actions (retry_step, requeue_to_test, requeue_dev); the others need 0.7. Under the bar the daemon asks a human and runs nothing."
       - "A test that returns passed=false, or a review with real defects, on a ticket: category product_bug, action create_bug_ticket (the daemon raises the bug issue under the ticket, capped at 3). Without a ticket: none, with the reason."
-      - "A defect of the harness: category harness_defect, a unified diff against origin/main in proposed_patch and action open_harness_pr, params.repo Litybe/aidp (crates/, docs/) or Litybe/aidp-skill (templates/, agents/). Never apply the patch yourself."
+      - "Harness defect: category harness_defect, unified diff in proposed_patch, action open_harness_pr, params.repo Litybe/<name>, name: aidp (Rust daemon, crates/ docs/), aidp-skill (templates/ agents/ skills/ scripts/), aidp-studio (web front), aidp-unity (Unity package). Never apply it yourself."
       - "Bugs that do not converge (trigger bugs_not_converging): read bug-history.json, test-infra.json, pr-lag.json and shared-patterns.json FIRST; the daemon computed them. Try test_infra_regression, branch_behind_main, shared_harness_failure, then real_defect. Never a 4th bug on the same cause."
       - "Every evidence item names a bundle file and quotes the timestamp or the log line it rests on."
     inputs:

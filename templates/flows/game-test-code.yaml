@@ -22,6 +22,11 @@ inputs:
 settings:
   max_merge_rounds: 2
 workspace: project
+# Forced moves (POST /api/tickets/:key/force): each entry lands on `step`, runs only the `keep` steps before it and
+# assumes `outputs` for the skipped ones, so the conditions after it hold.
+entries:
+  testing: { step: test_label, keep: [checkout, checkout_label, checkout_comment, checkout_stop, refresh, refresh_label, refresh_comment, refresh_stop] }
+  merge: { step: ready, outputs: { test: { passed: true } } }
 steps:
   - { id: checkout, kind: action, use: git.checkout, phase: Préparation }
   - { id: checkout_label, kind: action, use: gh.issue_label, with: { state: blocked }, phase: Préparation, when: "steps.checkout.outputs.blocked == true" }

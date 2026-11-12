@@ -24,6 +24,11 @@ inputs:
   ticket: { required: true }
 settings:
   max_merge_rounds: 2
+# Forced moves (POST /api/tickets/:key/force): each entry lands on `step`, runs only the `keep` steps before it and
+# assumes `outputs` for the skipped ones, so the conditions after it hold.
+entries:
+  testing: { step: test_label, keep: [worktree, branch] }
+  merge: { step: ready, keep: [worktree, branch], outputs: { test: { passed: true } } }
 steps:
   - { id: worktree, kind: action, use: git.worktree, phase: Préparation }
   - { id: branch, kind: action, use: git.branch, phase: Préparation }

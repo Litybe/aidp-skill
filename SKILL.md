@@ -97,7 +97,7 @@ PR attention: the daemon raises deduplicated PR signals (new comment, changes re
 Selected threads only: `rtk aidp gh pr-fix <repo> <n> --threads <ids> [--points <ids>] [--note-file -]` starts a free autonomous session through the daemon (`POST /api/prs/fix`) that fixes those threads, replies and pushes to the PR head branch. Use it for a quick fix of a few threads; use `fix-review-unity` to fix every review comment of a Unity PR.
 PR actions: `rtk aidp gh pr-ready`, `pr-update-branch`, `pr-merge`, `thread-reply` and `thread-resolve`; `rtk aidp gh pr-create --draft` opens a draft PR (the `pr_draft` setting sets the default). See `docs/exit-codes.md`.
 
-Test infrastructure notes (LOC-49), relevant when `rtk cargo test --workspace` runs in a `verify` stage:
+Test infrastructure notes (LOC-49), relevant when `rtk cargo nextest run --workspace` runs in a `verify` stage:
 - `aidp-testkit`'s `ProcShim` installs a real `<name>.exe` on Windows (an argv-recorder dev binary that
   writes one argument per line into `ARGV_FILE`), not a `.bat`: `CreateProcessW` cannot run a `.bat`
   as a command.

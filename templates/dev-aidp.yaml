@@ -27,9 +27,9 @@ description: >
 policy:
   - 'Read AGENTS.md at the repository root before the first change and follow it: code conventions, test layout, schema and golden rules, Conventional Commits.'
   - 'Nothing is installed or written on C:. RUSTUP_HOME, CARGO_HOME and the npm cache already point at D:\DevTools; never run rustup-init, cargo install or a download into the user profile.'
-  - 'Every cargo command in this run (check, build, test, clippy, run) runs with CARGO_TARGET_DIR set to D:\AIDP\target-dev-aidp. Bash: export CARGO_TARGET_DIR="D:/AIDP/target-dev-aidp". PowerShell: $env:CARGO_TARGET_DIR = "D:\AIDP\target-dev-aidp". Set it before the first cargo call.'
+  - 'Each checkout and worktree builds into its own target/. Never set or override CARGO_TARGET_DIR to a directory shared with another checkout. Thread and job counts come from .config/nextest.toml and .cargo/config.toml: never pass --test-threads, -j, --jobs, NEXTEST_TEST_THREADS or RUST_TEST_THREADS.'
   - 'Never run cargo clean or cargo build --release, and never copy anything into D:\AIDP\bin. The installed aidp is refreshed only by the user.'
-  - 'While iterating, check with cargo check -p <crate> and test with cargo nextest run -p <crate>. Run the whole workspace once, at the end of the stage, and never two cargo commands at once.'
+  - 'While iterating, check with cargo check -p <crate> and test with cargo nextest run -p <crate> (plain cargo test is for --doc only). Run the whole workspace once, at the end of the stage, and never two cargo commands at once.'
   - 'The skill (templates, agents, commands, SKILL.md) is read from $AIDP_SKILL_ROOT and never written by this run. A change the skill must follow is written down in plan.md as a follow-up for the skill repository.'
   - 'To check a change against the real skill, run the binary built from this tree with AIDP_SKILL_ROOT set: cargo run -p aidp-cli -- validate --all.'
 inputs:
@@ -160,7 +160,7 @@ stages:
         Write an executable plan for "{{ inputs.prompt }}". Slice the work into
         file-disjoint tasks by layer (Rust crates / schema and fixtures /
         docs), with `needs` only where a task genuinely reads another's
-        output. Every Rust task must say which `rtk cargo test` it adds or extends,
+        output. Every Rust task must say which `rtk cargo nextest run` test it adds or extends,
         in the layout AGENTS.md requires; every schema task must say which test
         proves it; every behaviour change the driver can see must carry a docs
         task, and plan.md lists the SKILL.md or template change the skill
@@ -185,8 +185,8 @@ stages:
         Apply the shared-file changes the tasks deferred to you (Cargo.toml,
         Cargo.lock, crate `mod` declarations and re-exports, any schema/*.json
         touched by more than one task), then run the full gauntlet once from the
-        repo root, with CARGO_TARGET_DIR set as the pipeline policy says:
-        `rtk cargo fmt --all`, `rtk cargo clippy --workspace --all-targets --all-features -- -D warnings`,
+        repo root, (own target/, no thread override, as the pipeline policy says):
+        `rtk cargo fmt --all -- --check`, `rtk cargo clippy --workspace --all-targets --all-features -- -D warnings`,
         `rtk cargo nextest run --workspace`, `rtk cargo nextest run --workspace -P integration`,
         `rtk cargo test --workspace --doc`, and
         `rtk cargo run -p aidp-cli -- validate --all` with AIDP_SKILL_ROOT set, which
@@ -237,9 +237,9 @@ stages:
       # the fix: reply `needs_review` naming the tests; the engine passes that on
       # to `rereview` instead of pausing, and the loop's exhaustion guard is the
       # human checkpoint.
-      - { name: refix, agent: executor, model: haiku, scope: { mode: repo_wide }, needs: [replan], inputs: { task: "Apply the correction plan, following AGENTS.md at the repository root. Fix every blocking finding, failing tests first, including tests that look pre-existing or unrelated to this change. Then re-run from the repository root with CARGO_TARGET_DIR set as the pipeline policy says: `rtk cargo fmt --all`, `rtk cargo clippy --workspace --all-targets --all-features -- -D warnings`, `rtk cargo nextest run --workspace`, `rtk cargo test --workspace --doc`, plus `rtk cargo run -p aidp-cli -- validate --all` with AIDP_SKILL_ROOT set. If anything is still red, reply `needs_review`, name each failing test in `summary` and set `signals.tests_failed`." } }
+      - { name: refix, agent: executor, model: haiku, scope: { mode: repo_wide }, needs: [replan], inputs: { task: "Apply the correction plan, following AGENTS.md at the repository root. Fix every blocking finding, failing tests first, including tests that look pre-existing or unrelated to this change. Then re-run from the repository root as the pipeline policy says: `rtk cargo fmt --all -- --check`, `rtk cargo clippy --workspace --all-targets --all-features -- -D warnings`, `rtk cargo nextest run --workspace`, `rtk cargo nextest run --workspace -P integration`, `rtk cargo test --workspace --doc`, plus `rtk cargo run -p aidp-cli -- validate --all` with AIDP_SKILL_ROOT set. If anything is still red, reply `needs_review`, name each failing test in `summary` and set `signals.tests_failed`." } }
       # Re-review the fixed code: the loop must re-produce the `findings` output it loops on, otherwise the loop condition never changes and the review stage is not linked back to the loop.
-      - { name: rereview, agent: reviewer, skills: [graphify], needs: [refix], inputs: { task: "Re-review the fixed tree against AGENTS.md. Re-run `rtk cargo nextest run --workspace` and `rtk cargo test --workspace --doc` from the repository root (with CARGO_TARGET_DIR set as the pipeline policy says) yourself rather than trusting refix's report: each failing test is a `blocking` finding (category `tests`), pre-existing or not. Also run `rtk aidp skill-rules check --base <default branch> --out <your stage_dir>/skill-rules.json` from the repo root (<default branch> is `main` when it exists, else `master`) and turn every finding in that file into a `blocking` finding (category `conventions`) in your own findings.json." }, outputs: [findings.json, summary.md] }
+      - { name: rereview, agent: reviewer, skills: [graphify], needs: [refix], inputs: { task: "Re-review the fixed tree against AGENTS.md. Re-run `rtk cargo nextest run --workspace`, `rtk cargo nextest run --workspace -P integration` and `rtk cargo test --workspace --doc` from the repository root (as the pipeline policy says) yourself rather than trusting refix's report: each failing test is a `blocking` finding (category `tests`), pre-existing or not. Also run `rtk aidp skill-rules check --base <default branch> --out <your stage_dir>/skill-rules.json` from the repo root (<default branch> is `main` when it exists, else `master`) and turn every finding in that file into a `blocking` finding (category `conventions`) in your own findings.json." }, outputs: [findings.json, summary.md] }
 
   - name: pr
     policy:

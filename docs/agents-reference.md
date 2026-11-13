@@ -492,7 +492,7 @@ A sub-agent returned `blocked`/`failed`, or asked questions — or, for a **non-
 >   The first is every stage a reviewer of that loop's source reads directly, reached through the
 >   composed review's axes: `implement` in `dev-aidp`, `verify` in `dev-studio`. A stage further up
 >   keeps its hard checkpoint. The second is every non-reviewer body stage:
->   `replan`, `refix`. A red `cargo test` or `npm run typecheck` reported as `needs_review` is exactly what
+>   `replan`, `refix`. A red `cargo nextest run` or `npm run typecheck` reported as `needs_review` is exactly what
 >   the review and the loop exist to fix, so the run goes on. The emitted `__REVIEWED` set names these
 >   stages. `up()` hands their `summary`/`signals`/`follow_ups` to the downstream reviewers under
 >   *Unresolved upstream problems*, and the correctness axis must file each one as a `blocking`
